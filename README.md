@@ -50,7 +50,6 @@ A modern, responsive full-stack recipe book application built with **FastAPI**, 
 | **Database** | MongoDB 7.0 / Atlas | Document store with text search & multi-key indexing |
 | **Containerization** | Docker, Docker Compose | Unified multi-stage container, healthchecks |
 | **Cloud Platform** | Google Cloud Run & Cloud Build | Serverless auto-scaling containers (0 to 10 instances) |
-| **K8s Alternative** | Kubernetes manifests (`deploy/k8s`) | ConfigMap, Secrets, Deployments, Probes, Ingress |
 
 ---
 
@@ -330,7 +329,9 @@ recipes/
 │   ├── .dockerignore
 │   ├── index.html                     # HTML root
 │   └── src/                           # Svelte components & stores
-└── deploy/
-    ├── cloud-native-guide.md          # Multi-cloud migration guide
-    └── k8s/                           # Production Kubernetes manifests
+└── scripts/
+    ├── dev.sh                         # Unified local dev environment with hot-reload
+    ├── build.sh                       # Single-container production build & test runner
+    ├── deploy-gcp.sh                  # Automated Google Cloud Run build & deployment
+    └── cleanup-gcp-artifacts.sh       # GCP Cloud Storage & Artifact Registry pruner
 ```

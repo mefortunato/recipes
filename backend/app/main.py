@@ -82,7 +82,7 @@ async def add_process_time_header(request: Request, call_next):
 
 
 # Include Routers
-# Mount health checks at root for Kubernetes/Cloud Run conventions
+# Mount health checks at root for Cloud Run conventions
 app.include_router(health_router)
 # Mount recipes API under /api/v1
 app.include_router(recipes_router, prefix=settings.api_prefix)

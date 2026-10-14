@@ -30,7 +30,7 @@ FROM python:3.11-slim AS runner
 
 WORKDIR /app
 
-# Create a non-privileged user for security compliance (Kubernetes / Cloud Run)
+# Create a non-privileged user for security compliance (Cloud Run)
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup --no-create-home appuser
 
