@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv
+venv/
+ENV/
+env/
+.pytest_cache/
+
+# Node / Vite
+node_modules/
+frontend/dist/
+dist/
+.env.local
+.env.*.local
+
+# Static output built for backend (rebuilt from frontend source)
+backend/app/static/
+
+# Environment & Secrets
+.env
+.env.*
+.env*.local
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.cert
+*.crt
+*client_secret*.json
+*credentials*.json
+*service_account*.json
+*service-account*.json
+gcp-key*.json
+*.secret
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
