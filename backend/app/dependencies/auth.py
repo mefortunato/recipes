@@ -60,9 +60,20 @@ async def get_current_user(
     settings = get_settings()
     user["_id"] = str(user["_id"])
     email = user.get("email", "")
-    can_edit = settings.can_user_edit(email)
-    user["can_edit"] = can_edit
-    user["role"] = "editor" if can_edit else "viewer"
+    is_bootstrap = settings.is_privileged_email(email)
+
+    if is_bootstrap:
+        user["role"] = "admin"
+        user["can_edit"] = True
+        user["is_admin"] = True
+        user["is_bootstrap"] = True
+    else:
+        role = user.get("role", "viewer")
+        user["role"] = role
+        user["is_admin"] = (role == "admin") or user.get("is_admin", False)
+        user["can_edit"] = (role in ("admin", "editor")) or user.get("can_edit", False)
+        user["is_bootstrap"] = False
+
     return user
 
 
@@ -84,5 +95,17 @@ async def require_editor_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: You do not have permission to add, edit, or delete recipes. Only authorized chefs/editors can modify recipes.",
+        )
+    return current_user
+
+
+async def require_admin_user(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Ensures the authenticated user has administrator / privileged permissions."""
+    if not (current_user.get("is_admin", False) or current_user.get("role") == "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Administrator access required. You do not have permission to manage user roles.",
         )
     return current_user

@@ -1,30 +1,8 @@
 <script>
   import { isAuthModalOpen, currentUser, authConfig, showToast } from '../stores';
-  import { api } from '../api';
-
-  let loggingIn = false;
 
   function closeModal() {
     isAuthModalOpen.set(false);
-  }
-
-  async function handleDemoLogin(asEditor) {
-    if (loggingIn) return;
-    loggingIn = true;
-    try {
-      const data = await api.demoLogin(asEditor);
-      currentUser.set(data.user);
-      if (data.user.can_edit) {
-        showToast(`Welcome Chef ${data.user.name}! 👨‍🍳 Full editor access granted.`, 'success');
-      } else {
-        showToast(`Welcome ${data.user.name}! 👁️ Viewing mode (read-only access).`, 'info');
-      }
-      closeModal();
-    } catch (err) {
-      showToast(err.message || 'Demo login failed', 'error');
-    } finally {
-      loggingIn = false;
-    }
   }
 
   function handleGoogleOAuth() {
@@ -67,50 +45,17 @@
         <div class="permissions-notice">
           <div class="notice-title">🛡️ Role-Based Access Control</div>
           <p class="notice-text">
-            Public visitors can browse, search, and scale recipes freely. Adding, updating, or deleting recipes requires an account with editor privileges.
+            Public visitors have read-only access. Authorized editors can create and update recipes. Privileged administrators can manage user permissions and roles in the Admin Panel.
           </p>
           {#if $authConfig?.allowed_editor_emails && $authConfig.allowed_editor_emails.length > 0}
             <div class="allowed-list">
-              <span class="allowed-label">Designated Editors:</span>
+              <span class="allowed-label">Bootstrap Admin (.env):</span>
               <span class="allowed-emails">
                 {$authConfig.allowed_editor_emails.includes('*') ? 'All authenticated Google users' : $authConfig.allowed_editor_emails.join(', ')}
               </span>
             </div>
           {/if}
         </div>
-
-        <!-- Dev Mode Testing Buttons -->
-        {#if $authConfig?.dev_login_enabled}
-          <div class="divider">
-            <span>Instant Demo Logins</span>
-          </div>
-
-          <div class="demo-buttons">
-            <button
-              class="btn-demo btn-demo-chef"
-              on:click={() => handleDemoLogin(true)}
-              disabled={loggingIn}
-            >
-              <span class="demo-icon">👨‍🍳</span>
-              <div class="demo-btn-details">
-                <span class="demo-title">Head Chef (Editor)</span>
-                <span class="demo-subtitle">Can add, edit, and delete recipes</span>
-              </div>
-            </button>
-
-            <button
-              class="btn-demo btn-demo-viewer"
-              on:click={() => handleDemoLogin(false)}
-              disabled={loggingIn}
-            >
-              <span class="demo-icon">👤</span>
-              <div class="demo-btn-details">
-                <span class="demo-title">Foodie Guest (Viewer)</span>
-                <span class="demo-subtitle">Read-only view without edit rights</span>
-              </div>
-            </button>
-          </div>
-        {/if}
       </div>
     </div>
   </div>
@@ -290,80 +235,4 @@
     font-family: monospace;
   }
 
-  .divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    color: #64748b;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
-  }
-
-  .divider::before,
-  .divider::after {
-    content: '';
-    flex: 1;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .divider span {
-    padding: 0 0.75rem;
-  }
-
-  .demo-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-
-  .btn-demo {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    padding: 0.75rem 1rem;
-    border-radius: 0.65rem;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
-    color: #f1f5f9;
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.2s;
-  }
-
-  .btn-demo:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.08);
-    transform: translateY(-1px);
-  }
-
-  .btn-demo-chef:hover:not(:disabled) {
-    border-color: rgba(16, 185, 129, 0.5);
-    background: rgba(16, 185, 129, 0.08);
-  }
-
-  .btn-demo-viewer:hover:not(:disabled) {
-    border-color: rgba(148, 163, 184, 0.5);
-    background: rgba(148, 163, 184, 0.08);
-  }
-
-  .demo-icon {
-    font-size: 1.5rem;
-  }
-
-  .demo-btn-details {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .demo-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #f8fafc;
-  }
-
-  .demo-subtitle {
-    font-size: 0.75rem;
-    color: #94a3b8;
-  }
 </style>

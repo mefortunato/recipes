@@ -165,20 +165,20 @@ Gourmet Vault employs role-based access control (RBAC):
    GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
    ```
 
-### 2. Configure Authorized Recipe Editors
-In `.env`, define who has permission to modify recipes:
+### 2. Configure Initial Administrator (Bootstrap Admin)
+In `.env`, define the initial privileged administrator email:
 ```env
-# Specific chef email accounts allowed to add/edit/delete recipes:
-ALLOWED_EDITOR_EMAILS=mef231@gmail.com,chef@gourmetvault.com
-
-# Or allow any authenticated Google user:
-# ALLOWED_EDITOR_EMAILS=*
+# Specific administrator/owner email seeded with bootstrap admin privileges:
+ALLOWED_EDITOR_EMAILS=mef231@gmail.com
 ```
+When this user signs in via Google OAuth, they are automatically granted **Admin** permissions (`is_admin=True`, `can_edit=True`, `is_bootstrap=True`).
 
-### 3. Local Dev & Demo Testing Mode
-When developing locally (`./scripts/dev.sh`), click **Sign In** to access:
-- **👨‍🍳 Head Chef (Editor)**: Instant 1-click test login with full edit/delete privileges.
-- **👤 Foodie Guest (Viewer)**: Instant 1-click test login in read-only mode to verify restrictions.
+### 3. User Roles & Admin Panel
+Privileged administrators can access the in-app **🛡️ Admin Panel** to manage team permissions securely:
+- **Viewer**: Read-only access to browse, search, and scale recipes.
+- **Editor**: Can create, update, and manage recipes.
+- **Admin**: Full recipe management plus user role management and team pre-provisioning.
+- **Security Hardening**: Demo logins and bypass credentials have been completely removed. All authentication is strictly verified via Google OAuth 2.0.
 
 ---
 

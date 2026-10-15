@@ -35,8 +35,8 @@ async def async_client():
     # By default, provide authorized editor credentials for base test suite
     app.dependency_overrides[require_editor_user] = lambda: {
         "_id": "507f1f77bcf86cd799439011",
-        "email": "chef@gourmetvault.com",
-        "name": "Test Head Chef",
+        "email": "testeditor@example.com",
+        "name": "Test Editor",
         "role": "editor",
         "can_edit": True,
     }

@@ -38,12 +38,10 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="super-secret-recipes-jwt-token-key-2026", description="Secret key for JWT")
     jwt_algorithm: str = Field(default="HS256", description="JWT encryption algorithm")
     access_token_expire_minutes: int = Field(default=60 * 24 * 7, description="Access token expiration (7 days)")
-    allow_dev_login: bool = Field(default=True, description="Enable instant chef demo login for development")
-
     # Role-based access control for recipe mutations (add, edit, delete, seed)
     # Comma-separated list of emails or '*' for any authenticated user
     allowed_editor_emails: str = Field(
-        default="chef@gourmetvault.com",
+        default="",
         description="Comma-separated emails allowed to add, edit, or delete recipes. Set to '*' to allow all signed-in users.",
     )
 
@@ -56,7 +54,8 @@ class Settings(BaseSettings):
             return ["*"]
         return [e.strip().lower() for e in self.allowed_editor_emails.split(",") if e.strip()]
 
-    def can_user_edit(self, email: Optional[str]) -> bool:
+    def is_privileged_email(self, email: Optional[str]) -> bool:
+        """Checks if an email matches the bootstrap privileged emails configured in ALLOWED_EDITOR_EMAILS."""
         if not email:
             return False
         emails = self.editor_emails_list
@@ -64,8 +63,11 @@ class Settings(BaseSettings):
             return True
         return email.strip().lower() in emails
 
+    def can_user_edit(self, email: Optional[str]) -> bool:
+        return self.is_privileged_email(email)
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

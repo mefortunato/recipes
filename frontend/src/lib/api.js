@@ -44,18 +44,37 @@ export const api = {
     return data;
   },
 
-  async demoLogin(asEditor = true) {
-    const data = await request(`/auth/demo-login?as_editor=${asEditor}`, {
-      method: 'POST',
-    });
-    if (data?.access_token && typeof localStorage !== 'undefined') {
-      localStorage.setItem('recipe_access_token', data.access_token);
-    }
-    return data;
-  },
-
   async getMe() {
     return request('/auth/me');
+  },
+
+  // Admin & User Permissions Management
+  async getAdminUsers(params = {}) {
+    const query = new URLSearchParams();
+    if (params.search) query.set('search', params.search);
+    if (params.role && params.role !== 'All') query.set('role', params.role);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    return request(`/admin/users${queryString}`);
+  },
+
+  async updateUserPermissions(userId, permissions) {
+    return request(`/admin/users/${userId}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify(permissions),
+    });
+  },
+
+  async provisionUser(userData) {
+    return request('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  },
+
+  async deleteUser(userId) {
+    return request(`/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
   },
 
   async logout() {

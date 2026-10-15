@@ -113,7 +113,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 JWT_SECRET="${JWT_SECRET:-super-secret-recipes-jwt-token-key-2026}"
 GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
 GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
-ALLOWED_EDITOR_EMAILS="${ALLOWED_EDITOR_EMAILS:-chef@gourmetvault.com}"
+ALLOWED_EDITOR_EMAILS="${ALLOWED_EDITOR_EMAILS:-}"
 
 # 5. Build and deploy container directly using Google Cloud Build & Cloud Run
 echo ""

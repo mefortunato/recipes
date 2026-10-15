@@ -19,6 +19,7 @@
   import RecipeModal from './lib/components/RecipeModal.svelte';
   import RecipeFormModal from './lib/components/RecipeFormModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
+  import AdminModal from './lib/components/AdminModal.svelte';
   import Toast from './lib/components/Toast.svelte';
   import EmptyState from './lib/components/EmptyState.svelte';
 
@@ -124,6 +125,7 @@
   <RecipeModal />
   <RecipeFormModal />
   <AuthModal />
+  <AdminModal />
   <Toast />
 </div>
 

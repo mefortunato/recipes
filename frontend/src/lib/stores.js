@@ -31,6 +31,7 @@ export const editingRecipe = writable(null);
 export const currentUser = writable(null);
 export const authConfig = writable(null);
 export const isAuthModalOpen = writable(false);
+export const isAdminModalOpen = writable(false);
 export const authLoading = writable(true);
 
 export const toast = writable({

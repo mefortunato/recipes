@@ -128,7 +128,7 @@ async def exchange_google_code(code: str, redirect_uri: str) -> Optional[Dict[st
 
 
 async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Finds existing user by email or creates a new one, then calculates editor permission."""
+    """Finds existing user by email or creates a new one, keeping bootstrap/database permissions."""
     settings = get_settings()
     db = db_manager.db
     if db is None:
@@ -137,15 +137,29 @@ async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
     email = user_info["email"].strip().lower()
     existing = await db.users.find_one({"email": email})
 
-    can_edit = settings.can_user_edit(email)
-    role = "editor" if can_edit else "viewer"
+    is_privileged = settings.is_privileged_email(email)
 
     if existing:
+        # If user email is in ALLOWED_EDITOR_EMAILS, they are guaranteed bootstrap admin
+        if is_privileged:
+            role = "admin"
+            can_edit = True
+            is_admin = True
+        else:
+            # Respect database permissions set by an admin!
+            role = existing.get("role", "viewer")
+            can_edit = existing.get("can_edit", (role in ("admin", "editor")))
+            is_admin = (role == "admin") or existing.get("is_admin", False)
+
         update_fields = {
             "last_login": utc_now(),
-            "can_edit": can_edit,
             "role": role,
+            "can_edit": can_edit,
+            "is_admin": is_admin,
+            "is_bootstrap": is_privileged,
         }
+        if user_info.get("name") and (not existing.get("name") or existing.get("name") == email.split("@")[0]):
+            update_fields["name"] = user_info["name"]
         if user_info.get("picture") and not existing.get("picture"):
             update_fields["picture"] = user_info["picture"]
         if user_info.get("google_id") and not existing.get("google_id"):
@@ -153,11 +167,19 @@ async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
 
         await db.users.update_one({"_id": existing["_id"]}, {"$set": update_fields})
         existing["_id"] = str(existing["_id"])
-        existing["can_edit"] = can_edit
-        existing["role"] = role
+        existing.update(update_fields)
         return existing
 
     # Create new user
+    if is_privileged:
+        role = "admin"
+        can_edit = True
+        is_admin = True
+    else:
+        role = user_info.get("role", "viewer")
+        can_edit = user_info.get("can_edit", (role in ("admin", "editor")))
+        is_admin = (role == "admin") or user_info.get("is_admin", False)
+
     new_user = {
         "email": email,
         "name": user_info.get("name", email.split("@")[0]),
@@ -165,6 +187,8 @@ async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
         "google_id": user_info.get("google_id"),
         "role": role,
         "can_edit": can_edit,
+        "is_admin": is_admin,
+        "is_bootstrap": is_privileged,
         "created_at": utc_now(),
         "last_login": utc_now(),
     }
@@ -173,29 +197,16 @@ async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
     return new_user
 
 
-async def get_demo_user(as_editor: bool = True) -> Dict[str, Any]:
-    """Creates or retrieves a demo user for instant test login."""
-    if as_editor:
-        demo_info = {
-            "email": "chef@gourmetvault.com",
-            "name": "Head Chef (Editor)",
-            "picture": "https://images.unsplash.com/photo-1577219491135-ce391730fb2c?w=150&auto=format&fit=crop&q=80",
-            "google_id": "demo-chef-id-001",
-        }
-    else:
-        demo_info = {
-            "email": "guest@gourmetvault.com",
-            "name": "Guest Foodie (Viewer)",
-            "picture": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-            "google_id": "demo-guest-id-002",
-        }
-
-    user = await get_or_create_user(demo_info)
-    # Ensure demo chef has can_edit true if as_editor was requested
-    if as_editor:
-        user["can_edit"] = True
-        user["role"] = "editor"
-    else:
-        user["can_edit"] = False
-        user["role"] = "viewer"
-    return user
+async def purge_demo_users(db) -> int:
+    """Purges any legacy demo users from the users collection."""
+    if db is None:
+        return 0
+    res = await db.users.delete_many({
+        "$or": [
+            {"email": {"$regex": r"@gourmetvault\.com$", "$options": "i"}},
+            {"google_id": {"$regex": r"^demo-", "$options": "i"}},
+        ]
+    })
+    if res.deleted_count > 0:
+        logger.info("Purged %d legacy demo users from database", res.deleted_count)
+    return res.deleted_count

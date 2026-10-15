@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import connect_to_mongo, close_mongo_connection, db_manager
-from app.routers import health_router, recipes_router, auth_router
+from app.routers import health_router, recipes_router, auth_router, admin_router
 from app.services.recipe_service import RecipeService
 
 settings = get_settings()
@@ -33,6 +33,14 @@ async def lifespan(app: FastAPI):
     """FastAPI Lifespan: Manage database connection and initial boot tasks."""
     logger.info("Starting up %s v%s in %s mode", settings.app_name, settings.app_version, settings.environment)
     await connect_to_mongo()
+
+    # Automatically purge legacy demo users to prevent security vulnerabilities
+    if db_manager.db is not None:
+        try:
+            from app.services.auth_service import purge_demo_users
+            await purge_demo_users(db_manager.db)
+        except Exception as exc:
+            logger.warning("Could not purge demo users on startup: %s", exc)
 
     # Auto-seed database if enabled and database is available
     if settings.auto_seed and db_manager.db is not None:
@@ -91,6 +99,9 @@ app.include_router(health_router, prefix=settings.api_prefix)
 # Mount authentication & permissions API under /api/v1 and /api
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(auth_router, prefix="/api")
+# Mount admin panel API under /api/v1 and /api
+app.include_router(admin_router, prefix=settings.api_prefix)
+app.include_router(admin_router, prefix="/api")
 
 
 # Static file serving & Single Page Application (SPA) fallback

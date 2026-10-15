@@ -1,8 +1,29 @@
+from datetime import datetime, timezone
 import pytest
+from bson import ObjectId
 from httpx import AsyncClient, ASGITransport
 from app.main import app
+from app.database import db_manager
 from app.dependencies.auth import require_editor_user
 from app.services.auth_service import create_access_token
+
+
+async def create_test_user(email: str, role: str = "viewer", name: str = "Test User"):
+    user_doc = {
+        "_id": ObjectId(),
+        "email": email,
+        "name": name,
+        "role": role,
+        "can_edit": role in ("editor", "admin"),
+        "is_admin": role == "admin",
+        "is_bootstrap": False,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db_manager.db.users.insert_one(user_doc)
+    token = create_access_token({"sub": str(user_doc["_id"]), "email": email})
+    user_doc["id"] = str(user_doc["_id"])
+    return user_doc, token
 
 
 @pytest.mark.asyncio
@@ -14,24 +35,30 @@ async def test_auth_config_endpoint():
         data = resp.json()
         assert "google_client_id" in data
         assert "dev_login_enabled" in data
+        assert data["dev_login_enabled"] is False
         assert "allowed_editor_emails" in data
 
 
 @pytest.mark.asyncio
-async def test_demo_login_editor_and_me():
+async def test_demo_login_endpoint_is_removed():
+    """Verify demo-login route was completely removed as a security vulnerability."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1. Login as demo editor
         resp = await client.post("/api/v1/auth/demo-login?as_editor=true")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "access_token" in data
-        assert data["user"]["can_edit"] is True
-        assert data["user"]["role"] == "editor"
+        assert resp.status_code in (404, 405)
 
-        token = data["access_token"]
 
-        # 2. Call /me with Bearer token
+@pytest.mark.asyncio
+async def test_authenticated_editor_and_me():
+    user, token = await create_test_user(
+        email="test_editor@example.com",
+        role="editor",
+        name="Test Editor User",
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Call /me with Bearer token
         me_resp = await client.get(
             "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {token}"},
@@ -39,19 +66,28 @@ async def test_demo_login_editor_and_me():
         assert me_resp.status_code == 200
         me_data = me_resp.json()
         assert me_data["can_edit"] is True
-        assert me_data["email"] == "chef@gourmetvault.com"
+        assert me_data["role"] == "editor"
+        assert me_data["email"] == "test_editor@example.com"
 
 
 @pytest.mark.asyncio
-async def test_demo_login_viewer():
+async def test_authenticated_viewer():
+    user, token = await create_test_user(
+        email="test_viewer@example.com",
+        role="viewer",
+        name="Test Viewer User",
+    )
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1. Login as demo viewer
-        resp = await client.post("/api/v1/auth/demo-login?as_editor=false")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["user"]["can_edit"] is False
-        assert data["user"]["role"] == "viewer"
+        me_resp = await client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert me_resp.status_code == 200
+        me_data = me_resp.json()
+        assert me_data["can_edit"] is False
+        assert me_data["role"] == "viewer"
 
 
 @pytest.mark.asyncio
@@ -76,14 +112,15 @@ async def test_anonymous_user_cannot_create_recipe():
 @pytest.mark.asyncio
 async def test_unauthorized_viewer_cannot_create_recipe():
     app.dependency_overrides.pop(require_editor_user, None)
+
+    user, token = await create_test_user(
+        email="viewer_blocked@example.com",
+        role="viewer",
+        name="Test Viewer",
+    )
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Login as viewer
-        login_resp = await client.post("/api/v1/auth/demo-login?as_editor=false")
-        assert login_resp.status_code == 200
-        token = login_resp.json()["access_token"]
-
-        # Attempt to create recipe as viewer
         recipe_payload = {
             "title": "Viewer Attempted Recipe",
             "description": "This should be rejected as forbidden",
@@ -101,13 +138,14 @@ async def test_unauthorized_viewer_cannot_create_recipe():
 
 @pytest.mark.asyncio
 async def test_authorized_editor_can_create_recipe():
+    user, token = await create_test_user(
+        email="editor_chef@example.com",
+        role="editor",
+        name="Editor Chef",
+    )
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Login as editor
-        login_resp = await client.post("/api/v1/auth/demo-login?as_editor=true")
-        assert login_resp.status_code == 200
-        token = login_resp.json()["access_token"]
-
         recipe_payload = {
             "title": "Chef Special Pasta",
             "description": "Authentic fresh pasta",

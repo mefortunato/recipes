@@ -9,6 +9,7 @@
     loadMetadata,
     currentUser,
     isAuthModalOpen,
+    isAdminModalOpen,
     handleLogout,
     authLoading
   } from '../stores';
@@ -17,6 +18,11 @@
   let searchTimeout;
   let seeding = false;
   let isUserMenuOpen = false;
+
+  function openAdminPanel() {
+    closeUserMenu();
+    isAdminModalOpen.set(true);
+  }
 
   function handleSearchInput(e) {
     const val = e.target.value;
@@ -121,7 +127,7 @@
         </span>
       </div>
 
-      <!-- Seed Demo Data -->
+      <!-- Seed Sample Recipes -->
       {#if $currentUser?.can_edit}
         <button
           class="btn btn-secondary btn-sm"
@@ -133,15 +139,29 @@
         </button>
       {/if}
 
+      <!-- Admin Panel Button (Privileged Users Only) -->
+      {#if $currentUser?.is_admin || $currentUser?.role === 'admin'}
+        <button
+          class="btn btn-admin btn-sm"
+          on:click={openAdminPanel}
+          title="Open Access & Permissions Admin Panel"
+        >
+          <span>🛡️</span>
+          <span>Admin Panel</span>
+        </button>
+      {/if}
+
       <!-- Add Recipe Button -->
-      <button
-        class="btn btn-primary"
-        on:click={openCreateModal}
-        title={$currentUser?.can_edit ? 'Create a new recipe' : 'Sign in as editor to add recipe'}
-      >
-        <span style="font-size: 1.1rem; line-height: 1;">+</span>
-        <span>Add Recipe</span>
-      </button>
+      {#if $currentUser?.can_edit}
+        <button
+          class="btn btn-primary"
+          on:click={openCreateModal}
+          title="Create a new recipe"
+        >
+          <span style="font-size: 1.1rem; line-height: 1;">+</span>
+          <span>Add Recipe</span>
+        </button>
+      {/if}
 
       <!-- User Account & Auth Section -->
       {#if $currentUser}
@@ -155,8 +175,8 @@
               </div>
             {/if}
             <span class="user-pill-name">{$currentUser.name.split(' ')[0]}</span>
-            <span class="role-badge {$currentUser.can_edit ? 'role-editor' : 'role-viewer'}">
-              {$currentUser.can_edit ? '👑 Chef' : '👁️ Viewer'}
+            <span class="role-badge {$currentUser.role === 'admin' || $currentUser.is_admin ? 'role-admin' : $currentUser.can_edit ? 'role-editor' : 'role-viewer'}">
+              {$currentUser.role === 'admin' || $currentUser.is_admin ? '👑 Admin' : $currentUser.can_edit ? '🍳 Chef' : '👁️ Viewer'}
             </span>
             <span class="caret">▾</span>
           </button>
@@ -167,14 +187,21 @@
                 <span class="menu-user-name">{$currentUser.name}</span>
                 <span class="menu-user-email">{$currentUser.email}</span>
                 <div class="menu-role-status">
-                  <span class="status-indicator-dot {$currentUser.can_edit ? 'dot-editor' : 'dot-viewer'}"></span>
+                  <span class="status-indicator-dot {$currentUser.role === 'admin' || $currentUser.is_admin ? 'dot-admin' : $currentUser.can_edit ? 'dot-editor' : 'dot-viewer'}"></span>
                   <span class="status-indicator-label">
-                    {$currentUser.can_edit ? 'Authorized Recipe Editor' : 'Read-Only Viewer Access'}
+                    {$currentUser.role === 'admin' || $currentUser.is_admin ? 'Privileged Administrator' : $currentUser.can_edit ? 'Authorized Recipe Editor' : 'Read-Only Viewer Access'}
                   </span>
                 </div>
               </div>
 
               <div class="menu-divider"></div>
+
+              {#if $currentUser.role === 'admin' || $currentUser.is_admin}
+                <button class="menu-item menu-item-admin" on:click={openAdminPanel}>
+                  <span>🛡️</span>
+                  <span>User Permissions Admin</span>
+                </button>
+              {/if}
 
               <button class="menu-item" on:click={openAuth}>
                 <span>🔄</span>
@@ -415,6 +442,12 @@
     letter-spacing: 0.03em;
   }
 
+  .role-admin {
+    background: rgba(147, 51, 234, 0.18);
+    color: #a855f7;
+    border: 1px solid rgba(168, 85, 247, 0.4);
+  }
+
   .role-editor {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
@@ -430,6 +463,20 @@
   .caret {
     font-size: 0.7rem;
     color: var(--text-muted);
+  }
+
+  /* Admin button in actions bar */
+  .btn-admin {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(124, 58, 237, 0.35);
+    border: 1px solid rgba(216, 180, 254, 0.3);
+  }
+
+  .btn-admin:hover {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(124, 58, 237, 0.45);
   }
 
   /* Dropdown Menu */
@@ -480,6 +527,11 @@
     border-radius: 50%;
   }
 
+  .dot-admin {
+    background: #a855f7;
+    box-shadow: 0 0 6px #a855f7;
+  }
+
   .dot-editor {
     background: #10b981;
     box-shadow: 0 0 6px #10b981;
@@ -512,6 +564,16 @@
 
   .menu-item:hover {
     background: rgba(255, 255, 255, 0.08);
+  }
+
+  .menu-item-admin {
+    color: #c084fc;
+    font-weight: 600;
+  }
+
+  .menu-item-admin:hover {
+    background: rgba(147, 51, 234, 0.2);
+    color: #f3e8ff;
   }
 
   .menu-item-logout {

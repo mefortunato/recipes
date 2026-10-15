@@ -11,7 +11,6 @@ from app.services.auth_service import (
     verify_google_credential,
     exchange_google_code,
     get_or_create_user,
-    get_demo_user,
 )
 from app.dependencies.auth import get_current_user
 
@@ -27,7 +26,7 @@ async def get_auth_config():
     return AuthConfigResponse(
         google_client_id=settings.google_client_id or "",
         google_auth_enabled=bool(settings.google_client_id and settings.google_client_secret),
-        dev_login_enabled=settings.allow_dev_login,
+        dev_login_enabled=False,
         allowed_editor_emails=settings.editor_emails_list,
     )
 
@@ -95,32 +94,6 @@ async def verify_google(body: GoogleVerifyRequest, response: Response):
         )
 
     user = await get_or_create_user(user_info)
-    token = create_access_token({"sub": user["_id"], "email": user["email"]})
-
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        max_age=settings.access_token_expire_minutes * 60,
-        samesite="lax",
-        secure=False,
-    )
-
-    return TokenResponse(
-        access_token=token,
-        token_type="bearer",
-        user=UserPublic(**user),
-    )
-
-
-@router.post("/demo-login", response_model=TokenResponse, summary="Instant Chef or Viewer demo login")
-async def demo_login(response: Response, as_editor: bool = Query(default=True, description="Login as authorized editor (True) or viewer (False)")):
-    """Instant login for local development and testing permissions without requiring Google OAuth."""
-    settings = get_settings()
-    if not settings.allow_dev_login:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo login is disabled in this environment.")
-
-    user = await get_demo_user(as_editor=as_editor)
     token = create_access_token({"sub": user["_id"], "email": user["email"]})
 
     response.set_cookie(
