@@ -205,3 +205,179 @@ async def test_static_html_and_spa_fallback(async_client: AsyncClient):
     resp_api_404 = await async_client.get("/api/v1/nonexistent")
     assert resp_api_404.status_code == 404
 
+
+@pytest.mark.asyncio
+async def test_voting_upvote_downvote_and_metrics(async_client: AsyncClient):
+    from bson import ObjectId
+    from datetime import datetime, timezone
+    from app.database import db_manager
+    from app.services.auth_service import create_access_token
+
+    # Create a viewer user (viewers can vote)
+    user_doc = {
+        "_id": ObjectId(),
+        "email": "voter1@example.com",
+        "name": "Voter One",
+        "role": "viewer",
+        "can_edit": False,
+        "is_admin": False,
+        "is_bootstrap": False,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db_manager.db.users.insert_one(user_doc)
+    token = create_access_token({"sub": str(user_doc["_id"]), "email": user_doc["email"]})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Get a recipe
+    list_resp = await async_client.get("/api/v1/recipes")
+    recipe = list_resp.json()["recipes"][0]
+    recipe_id = recipe["id"]
+    orig_up = recipe.get("upvotes_count", 0)
+    orig_down = recipe.get("downvotes_count", 0)
+    orig_rating = recipe.get("aggregate_rating", 0)
+
+    # 1. Upvote
+    up_resp = await async_client.post(
+        f"/api/v1/recipes/{recipe_id}/vote",
+        json={"vote": 1},
+        headers=headers,
+    )
+    assert up_resp.status_code == 200
+    up_data = up_resp.json()
+    assert up_data["upvotes_count"] == orig_up + 1
+    assert up_data["downvotes_count"] == orig_down
+    assert up_data["aggregate_rating"] == orig_rating + 1
+    assert up_data["user_vote"] == 1
+
+    # Verify GET by ID reflects user vote
+    get_resp = await async_client.get(f"/api/v1/recipes/{recipe_id}", headers=headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["user_vote"] == 1
+
+    # 2. Switch vote to Downvote
+    down_resp = await async_client.post(
+        f"/api/v1/recipes/{recipe_id}/vote",
+        json={"vote": -1},
+        headers=headers,
+    )
+    assert down_resp.status_code == 200
+    down_data = down_resp.json()
+    assert down_data["upvotes_count"] == orig_up
+    assert down_data["downvotes_count"] == orig_down + 1
+    assert down_data["aggregate_rating"] == orig_rating - 1
+    assert down_data["user_vote"] == -1
+
+    # 3. Clear Vote
+    del_resp = await async_client.delete(f"/api/v1/recipes/{recipe_id}/vote", headers=headers)
+    assert del_resp.status_code == 200
+    del_data = del_resp.json()
+    assert del_data["upvotes_count"] == orig_up
+    assert del_data["downvotes_count"] == orig_down
+    assert del_data["aggregate_rating"] == orig_rating
+    assert del_data["user_vote"] == 0
+
+
+@pytest.mark.asyncio
+async def test_upvote_and_downvote_toggle_endpoints(async_client: AsyncClient):
+    from bson import ObjectId
+    from datetime import datetime, timezone
+    from app.database import db_manager
+    from app.services.auth_service import create_access_token
+
+    user_doc = {
+        "_id": ObjectId(),
+        "email": "toggle_voter@example.com",
+        "name": "Toggle Voter",
+        "role": "viewer",
+        "can_edit": False,
+        "is_admin": False,
+        "is_bootstrap": False,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db_manager.db.users.insert_one(user_doc)
+    token = create_access_token({"sub": str(user_doc["_id"]), "email": user_doc["email"]})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    list_resp = await async_client.get("/api/v1/recipes")
+    recipe = list_resp.json()["recipes"][1]
+    recipe_id = recipe["id"]
+    orig_up = recipe.get("upvotes_count", 0)
+
+    # First upvote: adds vote
+    r1 = await async_client.post(f"/api/v1/recipes/{recipe_id}/upvote", headers=headers)
+    assert r1.status_code == 200
+    assert r1.json()["upvotes_count"] == orig_up + 1
+    assert r1.json()["user_vote"] == 1
+
+    # Second upvote: toggles off
+    r2 = await async_client.post(f"/api/v1/recipes/{recipe_id}/upvote", headers=headers)
+    assert r2.status_code == 200
+    assert r2.json()["upvotes_count"] == orig_up
+    assert r2.json()["user_vote"] == 0
+
+
+@pytest.mark.asyncio
+async def test_sorting_by_aggregate_vote_rating(async_client: AsyncClient):
+    # Sort descending
+    desc_resp = await async_client.get("/api/v1/recipes?sort_by=aggregate_rating&sort_order=-1")
+    assert desc_resp.status_code == 200
+    recipes_desc = desc_resp.json()["recipes"]
+    ratings_desc = [r["aggregate_rating"] for r in recipes_desc]
+    assert ratings_desc == sorted(ratings_desc, reverse=True)
+
+    # Sort ascending
+    asc_resp = await async_client.get("/api/v1/recipes?sort_by=aggregate_rating&sort_order=1")
+    assert asc_resp.status_code == 200
+    recipes_asc = asc_resp.json()["recipes"]
+    ratings_asc = [r["aggregate_rating"] for r in recipes_asc]
+    assert ratings_asc == sorted(ratings_asc)
+
+
+@pytest.mark.asyncio
+async def test_filter_by_user_voted(async_client: AsyncClient):
+    from bson import ObjectId
+    from datetime import datetime, timezone
+    from app.database import db_manager
+    from app.services.auth_service import create_access_token
+
+    user_doc = {
+        "_id": ObjectId(),
+        "email": "filter_voter@example.com",
+        "name": "Filter Voter",
+        "role": "viewer",
+        "can_edit": False,
+        "is_admin": False,
+        "is_bootstrap": False,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db_manager.db.users.insert_one(user_doc)
+    token = create_access_token({"sub": str(user_doc["_id"]), "email": user_doc["email"]})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Upvote one recipe
+    list_resp = await async_client.get("/api/v1/recipes")
+    target_recipe = list_resp.json()["recipes"][2]
+    await async_client.post(f"/api/v1/recipes/{target_recipe['id']}/vote", json={"vote": 1}, headers=headers)
+
+    # Filter by user_voted=up
+    filter_resp = await async_client.get("/api/v1/recipes?user_voted=up", headers=headers)
+    assert filter_resp.status_code == 200
+    voted_recipes = filter_resp.json()["recipes"]
+    assert len(voted_recipes) >= 1
+    assert any(r["id"] == target_recipe["id"] for r in voted_recipes)
+    for r in voted_recipes:
+        assert r["user_vote"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_voting(async_client: AsyncClient):
+    list_resp = await async_client.get("/api/v1/recipes")
+    recipe_id = list_resp.json()["recipes"][0]["id"]
+
+    resp = await async_client.post(f"/api/v1/recipes/{recipe_id}/vote", json={"vote": 1})
+    assert resp.status_code == 401
+
+

@@ -75,7 +75,9 @@ async def init_db_indexes(db: AsyncIOMotorDatabase) -> None:
         await recipes_collection.create_index("category")
         await recipes_collection.create_index("tags")
         await recipes_collection.create_index("created_at")
-        await recipes_collection.create_index("is_favorite")
+        await recipes_collection.create_index("aggregate_rating")
+        await recipes_collection.create_index("upvotes_count")
+        await recipes_collection.create_index("upvoted_by")
         logger.info("Database indexes successfully ensured on 'recipes' collection")
     except Exception as exc:
         logger.warning("Could not create database indexes: %s", exc)

@@ -2,13 +2,15 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.database import get_database
-from app.dependencies.auth import require_editor_user, require_admin_user
+from app.dependencies.auth import require_editor_user, require_admin_user, get_current_user, get_optional_user
 from app.models.recipe import (
     RecipeCreate,
     RecipeListResponse,
     RecipeResponse,
     RecipeUpdate,
     ScaledRecipeResponse,
+    VoteRequest,
+    VoteResponse,
 )
 from app.services.recipe_service import RecipeService
 
@@ -30,10 +32,13 @@ async def list_recipes(
     max_time: Optional[int] = Query(default=None, ge=1, description="Maximum total cooking time in minutes"),
     difficulty: Optional[str] = Query(default=None, description="Difficulty level (Easy, Medium, Hard)"),
     is_favorite: Optional[bool] = Query(default=None, description="Filter favorites"),
-    sort_by: str = Query(default="created_at", description="Field to sort by"),
+    user_voted: Optional[str] = Query(default=None, description="Filter by user vote: 'up' or 'down'"),
+    sort_by: str = Query(default="created_at", description="Field to sort by (created_at, aggregate_rating, upvotes_count, title, cook_time_minutes)"),
     sort_order: int = Query(default=-1, description="Sort direction: 1 for asc, -1 for desc"),
     service: RecipeService = Depends(get_service),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user),
 ):
+    current_user_id = str(current_user["_id"]) if current_user else None
     recipes, total, total_pages = await service.list_recipes(
         page=page,
         page_size=page_size,
@@ -44,8 +49,10 @@ async def list_recipes(
         max_time=max_time,
         difficulty=difficulty,
         is_favorite=is_favorite,
+        user_voted=user_voted,
         sort_by=sort_by,
         sort_order=sort_order,
+        current_user_id=current_user_id,
     )
     return RecipeListResponse(
         recipes=recipes,
@@ -62,7 +69,8 @@ async def create_recipe(
     service: RecipeService = Depends(get_service),
     current_user: Dict[str, Any] = Depends(require_editor_user),
 ):
-    return await service.create_recipe(recipe_in)
+    current_user_id = str(current_user["_id"]) if current_user else None
+    return await service.create_recipe(recipe_in, current_user_id=current_user_id)
 
 
 @router.get("/meta/tags", response_model=List[str], summary="Get all distinct recipe tags")
@@ -100,8 +108,10 @@ async def seed_recipes(
 async def get_recipe(
     recipe_id: str,
     service: RecipeService = Depends(get_service),
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user),
 ):
-    recipe = await service.get_recipe(recipe_id)
+    current_user_id = str(current_user["_id"]) if current_user else None
+    recipe = await service.get_recipe(recipe_id, current_user_id=current_user_id)
     if not recipe:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -117,11 +127,88 @@ async def update_recipe(
     service: RecipeService = Depends(get_service),
     current_user: Dict[str, Any] = Depends(require_editor_user),
 ):
-    updated = await service.update_recipe(recipe_id, recipe_in)
+    current_user_id = str(current_user["_id"]) if current_user else None
+    updated = await service.update_recipe(recipe_id, recipe_in, current_user_id=current_user_id)
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Recipe with id '{recipe_id}' was not found or could not be updated.",
+        )
+    return updated
+
+
+@router.post("/{recipe_id}/vote", response_model=RecipeResponse, summary="Vote on a recipe (Authenticated Users)")
+async def vote_recipe(
+    recipe_id: str,
+    vote_in: VoteRequest,
+    service: RecipeService = Depends(get_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Vote on a recipe: 1 for upvote, -1 for downvote, 0 to clear.
+    If toggle=True and user is already voted the same way, the vote is toggled off.
+    """
+    user_id = str(current_user["_id"])
+    updated = await service.vote_recipe(
+        recipe_id,
+        user_id=user_id,
+        vote_val=int(vote_in.vote),
+        toggle=vote_in.toggle,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id '{recipe_id}' was not found.",
+        )
+    return updated
+
+
+@router.post("/{recipe_id}/upvote", response_model=RecipeResponse, summary="Toggle upvote on a recipe (Authenticated Users)")
+async def upvote_recipe(
+    recipe_id: str,
+    service: RecipeService = Depends(get_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Convenience endpoint to toggle thumbs-up on a recipe."""
+    user_id = str(current_user["_id"])
+    updated = await service.vote_recipe(recipe_id, user_id=user_id, vote_val=1, toggle=True)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id '{recipe_id}' was not found.",
+        )
+    return updated
+
+
+@router.post("/{recipe_id}/downvote", response_model=RecipeResponse, summary="Toggle downvote on a recipe (Authenticated Users)")
+async def downvote_recipe(
+    recipe_id: str,
+    service: RecipeService = Depends(get_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Convenience endpoint to toggle thumbs-down on a recipe."""
+    user_id = str(current_user["_id"])
+    updated = await service.vote_recipe(recipe_id, user_id=user_id, vote_val=-1, toggle=True)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id '{recipe_id}' was not found.",
+        )
+    return updated
+
+
+@router.delete("/{recipe_id}/vote", response_model=RecipeResponse, summary="Clear vote on a recipe (Authenticated Users)")
+async def clear_vote(
+    recipe_id: str,
+    service: RecipeService = Depends(get_service),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Clear/remove user's vote on a recipe."""
+    user_id = str(current_user["_id"])
+    updated = await service.vote_recipe(recipe_id, user_id=user_id, vote_val=0)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with id '{recipe_id}' was not found.",
         )
     return updated
 
@@ -154,3 +241,4 @@ async def scale_recipe(
             detail=f"Recipe with id '{recipe_id}' was not found.",
         )
     return scaled
+

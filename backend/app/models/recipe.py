@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -35,7 +35,10 @@ class RecipeBase(BaseModel):
     instructions: List[InstructionStep] = Field(default_factory=list, description="Step-by-step cooking directions")
     images: List[str] = Field(default_factory=list, description="List of image URLs for the recipe")
     image_url: Optional[str] = Field(default=None, description="Primary/cover image URL")
-    is_favorite: bool = Field(default=False, description="Bookmarked favorite")
+    upvotes_count: int = Field(default=0, ge=0, description="Total number of users who upvoted")
+    downvotes_count: int = Field(default=0, ge=0, description="Total number of users who downvoted")
+    aggregate_rating: int = Field(default=0, description="Aggregate vote rating (upvotes - downvotes)")
+    is_favorite: Optional[bool] = Field(default=False, description="Legacy bookmarked favorite")
     notes: Optional[str] = Field(default=None, description="Chef's notes, pairings, or personal tweaks")
 
     @field_validator("tags", mode="before")
@@ -121,6 +124,7 @@ class RecipeResponse(RecipeBase):
     total_time_minutes: int = Field(..., description="Total duration (prep + cook)")
     created_at: datetime = Field(..., description="Creation timestamp UTC")
     updated_at: datetime = Field(..., description="Last update timestamp UTC")
+    user_vote: Optional[int] = Field(default=None, description="Current user vote (1 for upvote, -1 for downvote, None/0 for none)")
 
 
 class ScaledRecipeResponse(BaseModel):
@@ -138,3 +142,36 @@ class RecipeListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class VoteRequest(BaseModel):
+    vote: Union[int, str] = Field(..., description="1/'up' for upvote, -1/'down' for downvote, 0/'clear' to remove vote")
+    toggle: bool = Field(default=False, description="If True, repeat vote will toggle off")
+
+    @field_validator("vote")
+    @classmethod
+    def validate_vote(cls, v):
+        if isinstance(v, str):
+            v_clean = v.strip().lower()
+            if v_clean in ("1", "+1", "up", "upvote", "like", "toggle_up"):
+                return 1
+            elif v_clean in ("-1", "down", "downvote", "dislike", "toggle_down"):
+                return -1
+            elif v_clean in ("0", "clear", "none", "remove"):
+                return 0
+            raise ValueError("Invalid vote string. Must be 'up', 'down', or 'clear'.")
+        if isinstance(v, int):
+            if v in (1, -1, 0):
+                return v
+            raise ValueError("Vote integer must be 1, -1, or 0.")
+        raise ValueError("Vote must be an integer (1, -1, 0) or string ('up', 'down', 'clear').")
+
+
+class VoteResponse(BaseModel):
+    id: str
+    upvotes_count: int
+    downvotes_count: int
+    aggregate_rating: int
+    user_vote: Optional[int]
+    message: str
+

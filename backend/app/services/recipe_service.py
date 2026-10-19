@@ -37,8 +37,10 @@ class RecipeService:
         max_time: Optional[int] = None,
         difficulty: Optional[str] = None,
         is_favorite: Optional[bool] = None,
+        user_voted: Optional[str] = None,
         sort_by: str = "created_at",
         sort_order: int = -1,
+        current_user_id: Optional[str] = None,
     ) -> Tuple[List[RecipeResponse], int, int]:
         """Fetch paginated recipes with total count and calculated pages."""
         skip = (max(page, 1) - 1) * page_size
@@ -52,23 +54,35 @@ class RecipeService:
             max_time=max_time,
             difficulty=difficulty,
             is_favorite=is_favorite,
+            user_voted=user_voted,
             sort_by=sort_by,
             sort_order=sort_order,
+            current_user_id=current_user_id,
         )
         total_pages = math.ceil(total / page_size) if total > 0 else 1
         return recipes, total, total_pages
 
-    async def get_recipe(self, recipe_id: str) -> Optional[RecipeResponse]:
-        return await self.repository.get_by_id(recipe_id)
+    async def get_recipe(self, recipe_id: str, current_user_id: Optional[str] = None) -> Optional[RecipeResponse]:
+        return await self.repository.get_by_id(recipe_id, current_user_id=current_user_id)
 
-    async def create_recipe(self, recipe_in: RecipeCreate) -> RecipeResponse:
-        return await self.repository.create(recipe_in)
+    async def create_recipe(self, recipe_in: RecipeCreate, current_user_id: Optional[str] = None) -> RecipeResponse:
+        return await self.repository.create(recipe_in, current_user_id=current_user_id)
 
-    async def update_recipe(self, recipe_id: str, recipe_in: RecipeUpdate) -> Optional[RecipeResponse]:
-        return await self.repository.update(recipe_id, recipe_in)
+    async def update_recipe(self, recipe_id: str, recipe_in: RecipeUpdate, current_user_id: Optional[str] = None) -> Optional[RecipeResponse]:
+        return await self.repository.update(recipe_id, recipe_in, current_user_id=current_user_id)
+
+    async def vote_recipe(
+        self,
+        recipe_id: str,
+        user_id: str,
+        vote_val: int,
+        toggle: bool = False,
+    ) -> Optional[RecipeResponse]:
+        return await self.repository.vote(recipe_id, user_id, vote_val, toggle=toggle)
 
     async def delete_recipe(self, recipe_id: str) -> bool:
         return await self.repository.delete(recipe_id)
+
 
     async def scale_recipe(self, recipe_id: str, target_servings: int) -> Optional[ScaledRecipeResponse]:
         recipe = await self.repository.get_by_id(recipe_id)
