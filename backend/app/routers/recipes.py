@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.database import get_database
-from app.dependencies.auth import require_editor_user
+from app.dependencies.auth import require_editor_user, require_admin_user
 from app.models.recipe import (
     RecipeCreate,
     RecipeListResponse,
@@ -80,12 +80,18 @@ async def get_categories(service: RecipeService = Depends(get_service)):
     return await service.get_categories()
 
 
-@router.post("/seed", summary="Seed sample recipes into the database (Authorized Editors Only)")
+@router.post("/seed", summary="Seed sample recipes into the database (Admin Only)")
 async def seed_recipes(
     force: bool = Query(default=False, description="Force re-seeding even if recipes already exist"),
     service: RecipeService = Depends(get_service),
-    current_user: Dict[str, Any] = Depends(require_editor_user),
+    current_user: Dict[str, Any] = Depends(require_admin_user),
 ):
+    total = await service.repository.count_total()
+    if total > 0 and not force:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Database already contains {total} recipes. Verification is required to seed an existing database.",
+        )
     count = await service.seed_recipes(force=force)
     return {"message": f"Successfully seeded {count} sample recipes.", "count": count}
 

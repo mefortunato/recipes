@@ -2,15 +2,10 @@
   import {
     isFormModalOpen,
     editingRecipe,
-    loadRecipes,
-    loadMetadata,
     showToast,
     currentUser,
     isAuthModalOpen
   } from '../stores';
-  import { api } from '../api';
-
-  let seeding = false;
 
   function openCreate() {
     if (!$currentUser) {
@@ -24,27 +19,6 @@
     editingRecipe.set(null);
     isFormModalOpen.set(true);
   }
-
-  async function handleSeed() {
-    if (!$currentUser) {
-      isAuthModalOpen.set(true);
-      return;
-    }
-    if (!$currentUser.can_edit) {
-      showToast('Forbidden: Only authorized editors can seed sample recipes.', 'error');
-      return;
-    }
-    seeding = true;
-    try {
-      const res = await api.seedRecipes(true);
-      showToast(res.message || 'Recipes seeded!', 'success');
-      await Promise.all([loadRecipes(), loadMetadata()]);
-    } catch (err) {
-      showToast(err.message || 'Failed to seed sample recipes', 'error');
-    } finally {
-      seeding = false;
-    }
-  }
 </script>
 
 <div class="empty-state animate-fade-in">
@@ -55,9 +29,6 @@
   </p>
   <div class="empty-actions">
     {#if $currentUser?.can_edit}
-      <button class="btn btn-secondary" on:click={handleSeed} disabled={seeding}>
-        {seeding ? '🌱 Loading Recipes...' : '🌱 Seed Curated Recipes'}
-      </button>
       <button class="btn btn-primary" on:click={openCreate}>
         + Create First Recipe
       </button>
@@ -67,7 +38,7 @@
       </button>
     {:else}
       <p class="viewer-empty-msg">
-        👁️ You are viewing in read-only mode. An authorized chef can add or seed recipes.
+        👁️ You are viewing in read-only mode. An authorized chef can add recipes.
       </p>
     {/if}
   </div>

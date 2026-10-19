@@ -259,3 +259,50 @@ async def test_bootstrap_admin_from_allowed_editor_emails():
         )
         assert demote_resp.status_code == 400
         assert "ALLOWED_EDITOR_EMAILS" in demote_resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_seed_recipes_authorization_and_verification():
+    # 1. Non-admin editor user should be rejected (403 Forbidden)
+    _, editor_token = await create_test_user(
+        email="chef_editor@example.com",
+        role="editor",
+        name="Chef Editor",
+    )
+
+    # 2. Admin user
+    _, admin_token = await create_test_user(
+        email="super_admin@example.com",
+        role="admin",
+        name="Super Admin",
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Editor cannot seed
+        editor_resp = await client.post(
+            "/api/v1/recipes/seed",
+            headers={"Authorization": f"Bearer {editor_token}"},
+        )
+        assert editor_resp.status_code == 403
+
+        # Database currently has recipes from conftest
+        total_in_db = await db_manager.db.recipes.count_documents({})
+        assert total_in_db > 0
+
+        # Admin attempting to seed without force should be rejected with 409 Conflict
+        unverified_resp = await client.post(
+            "/api/v1/recipes/seed",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert unverified_resp.status_code == 409
+        assert "Verification is required" in unverified_resp.json()["detail"]
+
+        # Admin attempting to seed with force=True should succeed
+        verified_resp = await client.post(
+            "/api/v1/recipes/seed?force=true",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert verified_resp.status_code == 200
+        assert "Successfully seeded" in verified_resp.json()["message"]
+

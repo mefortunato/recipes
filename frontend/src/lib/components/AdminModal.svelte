@@ -1,6 +1,12 @@
 <script>
   import { onMount } from 'svelte';
-  import { isAdminModalOpen, currentUser, showToast } from '../stores';
+  import {
+    isAdminModalOpen,
+    currentUser,
+    showToast,
+    loadRecipes,
+    loadMetadata
+  } from '../stores';
   import { api } from '../api';
 
   let users = [];
@@ -27,13 +33,82 @@
     viewer_count: 0,
   };
 
+  // Database Seeding state
+  let dbRecipeCount = null;
+  let loadingDbStats = false;
+  let seeding = false;
+  let isSeedConfirmOpen = false;
+  let seedVerifyInput = '';
+
   $: if ($isAdminModalOpen) {
     loadUsers();
+    loadDbStats();
   }
 
   function closeModal() {
     isAdminModalOpen.set(false);
     isProvisionOpen = false;
+    isSeedConfirmOpen = false;
+    seedVerifyInput = '';
+  }
+
+  async function loadDbStats() {
+    loadingDbStats = true;
+    try {
+      const data = await api.getRecipes({ page_size: 1 });
+      dbRecipeCount = data.total ?? 0;
+    } catch (err) {
+      console.warn('Failed to fetch DB recipe count:', err);
+    } finally {
+      loadingDbStats = false;
+    }
+  }
+
+  async function handleSeedClick() {
+    if (seeding) return;
+
+    // Refresh latest count to guarantee accuracy before proceeding
+    try {
+      const data = await api.getRecipes({ page_size: 1 });
+      dbRecipeCount = data.total ?? 0;
+    } catch {
+      // fallback to current dbRecipeCount
+    }
+
+    if (dbRecipeCount !== null && dbRecipeCount > 0) {
+      seedVerifyInput = '';
+      isSeedConfirmOpen = true;
+    } else {
+      await executeSeed(false);
+    }
+  }
+
+  function closeSeedConfirm() {
+    isSeedConfirmOpen = false;
+    seedVerifyInput = '';
+  }
+
+  async function executeVerifiedSeed() {
+    if (seedVerifyInput.trim().toUpperCase() !== 'SEED') {
+      showToast('Please type SEED to confirm database seeding.', 'error');
+      return;
+    }
+    await executeSeed(true);
+  }
+
+  async function executeSeed(force = false) {
+    if (seeding) return;
+    seeding = true;
+    try {
+      const res = await api.seedRecipes(force);
+      showToast(res.message || 'Recipes seeded successfully! 🎉', 'success');
+      closeSeedConfirm();
+      await Promise.all([loadDbStats(), loadRecipes(), loadMetadata()]);
+    } catch (err) {
+      showToast(err.message || 'Failed to seed sample recipes', 'error');
+    } finally {
+      seeding = false;
+    }
   }
 
   async function loadUsers() {
@@ -198,8 +273,8 @@
           <div class="header-text">
             <div class="header-top-row">
               <h2 id="admin-title-heading" class="admin-title">Access & Permissions Admin</h2>
-              <span class="badge-env-notice" title="Configured in server .env">
-                ALLOWED_EDITOR_EMAILS Active
+              <span class="badge-env-notice" title="Role-based access control enabled">
+                RBAC Active
               </span>
             </div>
             <p class="admin-subtitle">
@@ -242,6 +317,39 @@
             <span class="metric-value text-slate">{metrics.viewer_count}</span>
           </div>
           <span class="metric-icon">👁️</span>
+        </div>
+      </div>
+
+      <!-- Database Status & Seeding Card -->
+      <div class="db-seeding-card">
+        <div class="db-seeding-info">
+          <div class="db-seeding-badge-row">
+            <span class="db-icon">🌱</span>
+            <span class="db-card-title">Recipe Catalog Database</span>
+            <span class="badge-db-count {dbRecipeCount === 0 ? 'badge-db-empty' : 'badge-db-populated'}">
+              {loadingDbStats && dbRecipeCount === null
+                ? 'Checking...'
+                : `${dbRecipeCount ?? 0} ${(dbRecipeCount === 1) ? 'Recipe' : 'Recipes'} in DB`}
+            </span>
+          </div>
+          <p class="db-seeding-desc">
+            {#if dbRecipeCount === 0}
+              Database currently contains <strong>0 recipes</strong>. You can seed the curated starter recipe collection.
+            {:else}
+              Database contains <strong>{dbRecipeCount} {dbRecipeCount === 1 ? 'recipe' : 'recipes'}</strong>.
+              Seeding should really only be done if there are 0 recipes in the DB.
+            {/if}
+          </p>
+        </div>
+        <div class="db-seeding-action">
+          <button
+            class="btn btn-seed {dbRecipeCount > 0 ? 'btn-seed-verify' : 'btn-seed-ready'}"
+            on:click={handleSeedClick}
+            disabled={seeding || loadingDbStats}
+            title={dbRecipeCount > 0 ? 'Verification required: database already has recipes' : 'Seed curated recipes'}
+          >
+            <span>{seeding ? '🌱 Seeding Recipes...' : '🌱 Seed Recipes'}</span>
+          </button>
         </div>
       </div>
 
@@ -416,7 +524,7 @@
                             {#if user.is_bootstrap}
                               <span
                                 class="badge-pill badge-bootstrap"
-                                title="Configured as initial privileged administrator in ALLOWED_EDITOR_EMAILS (.env)"
+                                title="Configured as initial privileged administrator in server environment"
                               >
                                 ⚡ .env Bootstrap
                               </span>
@@ -435,7 +543,7 @@
                           value={user.role}
                           on:change={(e) => handleRoleChange(user, e)}
                           disabled={savingUserId === user.id || user.is_bootstrap}
-                          title={user.is_bootstrap ? 'Role is configured via ALLOWED_EDITOR_EMAILS in .env' : 'Change user role'}
+                          title={user.is_bootstrap ? 'Role is configured via server environment' : 'Change user role'}
                         >
                           <option value="admin">👑 Administrator</option>
                           <option value="editor">🍳 Recipe Editor</option>
@@ -495,7 +603,7 @@
         <div class="footer-note">
           <span class="lock-icon">🔐</span>
           <span>
-            First privileged user is seeded from <code>ALLOWED_EDITOR_EMAILS</code> in <code>.env</code>. Newly assigned roles take effect immediately across all devices.
+            Initial privileged administrator is seeded from server environment. Newly assigned roles take effect immediately across all devices.
           </span>
         </div>
         <button class="btn btn-secondary" on:click={closeModal}>
@@ -504,6 +612,82 @@
       </div>
     </div>
   </div>
+
+  <!-- Seed Verification Modal -->
+  {#if isSeedConfirmOpen}
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <div
+      class="verify-backdrop animate-fade-in"
+      on:click={closeSeedConfirm}
+      on:keydown={(e) => e.key === 'Escape' && closeSeedConfirm()}
+      role="presentation"
+    >
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <div
+        class="verify-dialog"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="seed-verify-title"
+      >
+        <div class="verify-header">
+          <div class="verify-icon-wrap">
+            <span>⚠️</span>
+          </div>
+          <div class="verify-header-text">
+            <h3 id="seed-verify-title" class="verify-title">Verification Required</h3>
+            <span class="verify-subtitle">Database Already Contains Recipes</span>
+          </div>
+          <button class="close-btn" on:click={closeSeedConfirm} aria-label="Cancel">✕</button>
+        </div>
+
+        <div class="verify-content">
+          <div class="verify-warning-card">
+            <p class="verify-alert-text">
+              There are currently <strong>{dbRecipeCount} {dbRecipeCount === 1 ? 'recipe' : 'recipes'}</strong> in the database.
+            </p>
+            <p class="verify-sub-alert">
+              Seeding should really only be done if there are <strong>0 recipes</strong> in the DB.
+              Proceeding will insert additional sample recipes alongside your existing data.
+            </p>
+          </div>
+
+          <div class="verify-field">
+            <label for="verify-seed-input" class="verify-label">
+              To confirm this action, please type <strong class="type-target">SEED</strong>:
+            </label>
+            <input
+              id="verify-seed-input"
+              type="text"
+              class="verify-text-input"
+              placeholder="Type SEED to confirm"
+              bind:value={seedVerifyInput}
+              autocomplete="off"
+              on:keydown={(e) => {
+                if (e.key === 'Enter' && seedVerifyInput.trim().toUpperCase() === 'SEED') {
+                  executeVerifiedSeed();
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        <div class="verify-actions">
+          <button class="btn btn-secondary" on:click={closeSeedConfirm} disabled={seeding}>
+            Cancel
+          </button>
+          <button
+            class="btn btn-danger-action"
+            disabled={seedVerifyInput.trim().toUpperCase() !== 'SEED' || seeding}
+            on:click={executeVerifiedSeed}
+          >
+            {seeding ? '🌱 Seeding...' : '⚠️ Force Seed Recipes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -1186,13 +1370,6 @@
     max-width: 720px;
   }
 
-  .footer-note code {
-    background: rgba(255, 255, 255, 0.08);
-    padding: 0.1rem 0.35rem;
-    border-radius: 4px;
-    color: #e2e8f0;
-  }
-
   @media (max-width: 860px) {
     .metrics-grid {
       grid-template-columns: repeat(2, 1fr);
@@ -1202,6 +1379,312 @@
   @media (max-width: 600px) {
     .metrics-grid {
       grid-template-columns: 1fr;
+    }
+  }
+
+  /* Database Seeding Card */
+  .db-seeding-card {
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 0.85rem;
+    margin: 0.25rem 1.75rem 1rem;
+    padding: 0.85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    transition: all 0.2s ease;
+  }
+
+  .db-seeding-card:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(30, 41, 59, 0.6);
+  }
+
+  .db-seeding-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .db-seeding-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .db-icon {
+    font-size: 1.15rem;
+  }
+
+  .db-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #f8fafc;
+  }
+
+  .badge-db-count {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    letter-spacing: 0.03em;
+  }
+
+  .badge-db-empty {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+  }
+
+  .badge-db-populated {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
+
+  .db-seeding-desc {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+
+  .db-seeding-desc strong {
+    color: #e2e8f0;
+  }
+
+  .db-seeding-action {
+    flex-shrink: 0;
+  }
+
+  .btn-seed {
+    padding: 0.55rem 1.15rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 0.65rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    transition: all 0.2s ease;
+  }
+
+  .btn-seed-ready {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    color: #ffffff;
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  }
+
+  .btn-seed-ready:hover:not(:disabled) {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-seed-verify {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
+
+  .btn-seed-verify:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.25);
+    color: #fef3c7;
+    border-color: rgba(245, 158, 11, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .btn-seed:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* Seed Verification Modal */
+  .verify-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    padding: 1.5rem;
+  }
+
+  .verify-dialog {
+    background: #0f172a;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 1.15rem;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 25px rgba(245, 158, 11, 0.15);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .verify-header {
+    padding: 1.15rem 1.35rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    background: rgba(30, 41, 59, 0.5);
+  }
+
+  .verify-icon-wrap {
+    width: 42px;
+    height: 42px;
+    border-radius: 0.75rem;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+  }
+
+  .verify-header-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .verify-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #f8fafc;
+  }
+
+  .verify-subtitle {
+    font-size: 0.75rem;
+    color: #fbbf24;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .verify-content {
+    padding: 1.25rem 1.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+  }
+
+  .verify-warning-card {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 0.75rem;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .verify-alert-text {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #fef3c7;
+    line-height: 1.4;
+  }
+
+  .verify-sub-alert {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    line-height: 1.45;
+  }
+
+  .verify-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .verify-label {
+    font-size: 0.82rem;
+    color: #94a3b8;
+  }
+
+  .type-target {
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.15);
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.3rem;
+    font-family: monospace;
+    font-size: 0.9rem;
+  }
+
+  .verify-text-input {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.6rem;
+    padding: 0.65rem 0.9rem;
+    color: #ffffff;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    outline: none;
+    transition: all 0.2s ease;
+  }
+
+  .verify-text-input:focus {
+    border-color: #fbbf24;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+  }
+
+  .verify-actions {
+    padding: 1rem 1.35rem;
+    background: rgba(30, 41, 59, 0.4);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
+  .btn-danger-action {
+    background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+    color: #ffffff;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    padding: 0.55rem 1.1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 0.65rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-danger-action:hover:not(:disabled) {
+    background: linear-gradient(135deg, #b45309 0%, #92400e 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(180, 83, 9, 0.3);
+  }
+
+  .btn-danger-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  @media (max-width: 600px) {
+    .db-seeding-card {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.85rem;
+    }
+
+    .db-seeding-action {
+      width: 100%;
+    }
+
+    .btn-seed {
+      width: 100%;
+      justify-content: center;
     }
   }
 </style>

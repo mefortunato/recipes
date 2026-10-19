@@ -6,17 +6,14 @@
     editingRecipe,
     systemHealth,
     showToast,
-    loadMetadata,
     currentUser,
     isAuthModalOpen,
     isAdminModalOpen,
     handleLogout,
     authLoading
   } from '../stores';
-  import { api } from '../api';
 
   let searchTimeout;
-  let seeding = false;
   let isUserMenuOpen = false;
 
   function openAdminPanel() {
@@ -45,29 +42,6 @@
     }
     editingRecipe.set(null);
     isFormModalOpen.set(true);
-  }
-
-  async function handleSeed() {
-    if (!$currentUser) {
-      showToast('Please sign in as an authorized editor to seed recipes.', 'info');
-      isAuthModalOpen.set(true);
-      return;
-    }
-    if (!$currentUser.can_edit) {
-      showToast('Forbidden: Only authorized editors can seed sample recipes.', 'error');
-      return;
-    }
-    if (seeding) return;
-    seeding = true;
-    try {
-      const res = await api.seedRecipes(true);
-      showToast(res.message || 'Recipes seeded successfully!', 'success');
-      await Promise.all([loadRecipes(), loadMetadata()]);
-    } catch (err) {
-      showToast(err.message || 'Failed to seed sample recipes', 'error');
-    } finally {
-      seeding = false;
-    }
   }
 
   function toggleUserMenu() {
@@ -127,17 +101,6 @@
         </span>
       </div>
 
-      <!-- Seed Sample Recipes -->
-      {#if $currentUser?.can_edit}
-        <button
-          class="btn btn-secondary btn-sm"
-          on:click={handleSeed}
-          disabled={seeding}
-          title="Load curated chef recipes"
-        >
-          <span>{seeding ? '🌱 Seeding...' : '🌱 Seed Recipes'}</span>
-        </button>
-      {/if}
 
       <!-- Admin Panel Button (Privileged Users Only) -->
       {#if $currentUser?.is_admin || $currentUser?.role === 'admin'}
