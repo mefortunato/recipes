@@ -13,7 +13,9 @@ export const filters = writable({
   cuisine: 'All',
   difficulty: 'All',
   max_time: null,
-  is_favorite: null,
+  user_voted: null,
+  sort_by: 'created_at',
+  sort_order: -1,
   tag: null,
 });
 
@@ -53,6 +55,16 @@ export function showToast(message, type = 'info', duration = 3500) {
   }, duration);
 }
 
+export function updateRecipeInStore(updatedRecipe) {
+  if (!updatedRecipe || !updatedRecipe.id) return;
+  recipes.update((items) =>
+    items.map((r) => (r.id === updatedRecipe.id ? { ...r, ...updatedRecipe } : r))
+  );
+  activeRecipe.update((cur) =>
+    cur && cur.id === updatedRecipe.id ? { ...cur, ...updatedRecipe } : cur
+  );
+}
+
 export async function initAuth() {
   authLoading.set(true);
 
@@ -81,6 +93,8 @@ export async function initAuth() {
   try {
     const user = await api.getMe();
     currentUser.set(user);
+    // Reload recipes to resolve user-specific votes
+    loadRecipes();
   } catch (err) {
     currentUser.set(null);
   } finally {
@@ -93,6 +107,7 @@ export async function handleLogout() {
     await api.logout();
     currentUser.set(null);
     showToast('Signed out successfully.', 'info');
+    loadRecipes();
   } catch (err) {
     showToast('Error during logout.', 'error');
   }

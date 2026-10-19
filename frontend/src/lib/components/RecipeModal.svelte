@@ -7,7 +7,8 @@
     loadRecipes,
     showToast,
     currentUser,
-    isAuthModalOpen
+    isAuthModalOpen,
+    updateRecipeInStore
   } from '../stores';
   import { api } from '../api';
 
@@ -17,6 +18,53 @@
   let checkedSteps = new Set();
   let scaling = false;
   let deleting = false;
+  let voting = false;
+
+  $: aggregateRating = $activeRecipe
+    ? ($activeRecipe.aggregate_rating ?? (($activeRecipe.upvotes_count || 0) - ($activeRecipe.downvotes_count || 0)))
+    : 0;
+
+  async function handleModalUpvote() {
+    if (!$currentUser) {
+      showToast('Please sign in to vote on recipes.', 'info');
+      isAuthModalOpen.set(true);
+      return;
+    }
+    if (voting || !$activeRecipe) return;
+    voting = true;
+    try {
+      const targetVote = $activeRecipe.user_vote === 1 ? 0 : 1;
+      const updated = await api.voteRecipe($activeRecipe.id, targetVote);
+      activeRecipe.set(updated);
+      updateRecipeInStore(updated);
+      showToast(targetVote === 1 ? 'Upvoted recipe! 👍' : 'Upvote removed', 'info', 1800);
+    } catch (err) {
+      showToast(err.message || 'Could not register vote', 'error');
+    } finally {
+      voting = false;
+    }
+  }
+
+  async function handleModalDownvote() {
+    if (!$currentUser) {
+      showToast('Please sign in to vote on recipes.', 'info');
+      isAuthModalOpen.set(true);
+      return;
+    }
+    if (voting || !$activeRecipe) return;
+    voting = true;
+    try {
+      const targetVote = $activeRecipe.user_vote === -1 ? 0 : -1;
+      const updated = await api.voteRecipe($activeRecipe.id, targetVote);
+      activeRecipe.set(updated);
+      updateRecipeInStore(updated);
+      showToast(targetVote === -1 ? 'Downvoted recipe 👎' : 'Downvote removed', 'info', 1800);
+    } catch (err) {
+      showToast(err.message || 'Could not register vote', 'error');
+    } finally {
+      voting = false;
+    }
+  }
 
   // Multiple Images Gallery state
   let activeImageIndex = 0;
@@ -240,6 +288,51 @@
           <div class="stat-box">
             <span class="stat-label">Base Servings</span>
             <span class="stat-value">🍽️ {$activeRecipe.servings}</span>
+          </div>
+        </div>
+
+        <!-- Voting & Rating Section Card -->
+        <div class="vote-section-card">
+          <div class="vote-section-left">
+            <div class="vote-score-pill">
+              <span class="rating-icon">⭐</span>
+              <span class="rating-val {aggregateRating > 0 ? 'score-positive' : aggregateRating < 0 ? 'score-negative' : 'score-zero'}">
+                {aggregateRating > 0 ? `+${aggregateRating}` : aggregateRating}
+              </span>
+              <span class="rating-label">Rating</span>
+            </div>
+            <div class="vote-breakdown">
+              <span class="vote-stat-item" title="Users who upvoted">
+                <strong>{$activeRecipe.upvotes_count || 0}</strong> upvotes
+              </span>
+              <span class="vote-stat-sep">•</span>
+              <span class="vote-stat-item" title="Users who downvoted">
+                <strong>{$activeRecipe.downvotes_count || 0}</strong> downvotes
+              </span>
+            </div>
+          </div>
+
+          <div class="vote-actions">
+            <button
+              type="button"
+              class="modal-vote-btn upvote-btn {$activeRecipe.user_vote === 1 ? 'voted-up' : ''}"
+              on:click={handleModalUpvote}
+              disabled={voting}
+              title={$activeRecipe.user_vote === 1 ? 'Remove upvote' : 'Upvote this recipe'}
+            >
+              <span>👍</span>
+              <span>{$activeRecipe.user_vote === 1 ? 'Upvoted' : 'Upvote'}</span>
+            </button>
+            <button
+              type="button"
+              class="modal-vote-btn downvote-btn {$activeRecipe.user_vote === -1 ? 'voted-down' : ''}"
+              on:click={handleModalDownvote}
+              disabled={voting}
+              title={$activeRecipe.user_vote === -1 ? 'Remove downvote' : 'Downvote this recipe'}
+            >
+              <span>👎</span>
+              <span>{$activeRecipe.user_vote === -1 ? 'Downvoted' : 'Downvote'}</span>
+            </button>
           </div>
         </div>
 
@@ -638,6 +731,136 @@
     font-weight: 700;
     color: var(--text-main);
     margin-top: 0.2rem;
+  }
+
+  /* Voting & Rating Section in Modal */
+  .vote-section-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.9rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .vote-section-left {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+  }
+
+  .vote-score-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--bg-subtle);
+    padding: 0.35rem 0.8rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border-subtle);
+  }
+
+  .rating-icon {
+    font-size: 1rem;
+  }
+
+  .rating-val {
+    font-size: 1.15rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rating-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .score-positive {
+    color: #15803d;
+  }
+
+  .score-negative {
+    color: #b91c1c;
+  }
+
+  .score-zero {
+    color: #64748b;
+  }
+
+  .vote-breakdown {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .vote-stat-item strong {
+    color: var(--text-main);
+  }
+
+  .vote-stat-sep {
+    color: var(--border-color);
+  }
+
+  .vote-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .modal-vote-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.95rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-subtle);
+    color: var(--text-main);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .modal-vote-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .modal-vote-btn.upvote-btn:hover:not(:disabled) {
+    background: #ecfdf5;
+    border-color: #86efac;
+    color: #065f46;
+  }
+
+  .modal-vote-btn.upvote-btn.voted-up {
+    background: #dcfce7;
+    border-color: #22c55e;
+    color: #15803d;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.35);
+  }
+
+  .modal-vote-btn.downvote-btn:hover:not(:disabled) {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    color: #991b1b;
+  }
+
+  .modal-vote-btn.downvote-btn.voted-down {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #b91c1c;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.35);
   }
 
   .scaler-card {

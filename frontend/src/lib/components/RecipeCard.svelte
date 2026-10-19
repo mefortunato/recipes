@@ -1,40 +1,73 @@
 <script>
-  import { activeRecipe, isViewModalOpen, showToast, loadRecipes, currentUser, isAuthModalOpen } from '../stores';
+  import {
+    activeRecipe,
+    isViewModalOpen,
+    showToast,
+    currentUser,
+    isAuthModalOpen,
+    updateRecipeInStore
+  } from '../stores';
   import { api } from '../api';
 
   export let recipe;
 
   let imageError = false;
-  let togglingFavorite = false;
+  let voting = false;
 
   function openDetails() {
     activeRecipe.set(recipe);
     isViewModalOpen.set(true);
   }
 
-  async function toggleFavorite(e) {
+  async function handleUpvote(e) {
     e.stopPropagation();
-    if (!$currentUser?.can_edit) {
-      showToast('Sign in as an authorized editor to save favorites.', 'info');
+    if (!$currentUser) {
+      showToast('Please sign in to vote on recipes.', 'info');
       isAuthModalOpen.set(true);
       return;
     }
-    if (togglingFavorite) return;
-    togglingFavorite = true;
+    if (voting) return;
+    voting = true;
     try {
-      const updated = await api.updateRecipe(recipe.id, {
-        is_favorite: !recipe.is_favorite,
-      });
-      recipe.is_favorite = updated.is_favorite;
+      const targetVote = recipe.user_vote === 1 ? 0 : 1;
+      const updated = await api.voteRecipe(recipe.id, targetVote);
+      recipe = { ...recipe, ...updated };
+      updateRecipeInStore(updated);
       showToast(
-        recipe.is_favorite ? 'Added to favorites' : 'Removed from favorites',
+        targetVote === 1 ? 'Upvoted recipe! 👍' : 'Upvote removed',
         'info',
-        2000
+        1800
       );
     } catch (err) {
-      showToast('Could not update favorite status', 'error');
+      showToast(err.message || 'Could not register vote', 'error');
     } finally {
-      togglingFavorite = false;
+      voting = false;
+    }
+  }
+
+  async function handleDownvote(e) {
+    e.stopPropagation();
+    if (!$currentUser) {
+      showToast('Please sign in to vote on recipes.', 'info');
+      isAuthModalOpen.set(true);
+      return;
+    }
+    if (voting) return;
+    voting = true;
+    try {
+      const targetVote = recipe.user_vote === -1 ? 0 : -1;
+      const updated = await api.voteRecipe(recipe.id, targetVote);
+      recipe = { ...recipe, ...updated };
+      updateRecipeInStore(updated);
+      showToast(
+        targetVote === -1 ? 'Downvoted recipe 👎' : 'Downvote removed',
+        'info',
+        1800
+      );
+    } catch (err) {
+      showToast(err.message || 'Could not register vote', 'error');
+    } finally {
+      voting = false;
     }
   }
 
@@ -46,6 +79,7 @@
 
   $: primaryImage = (recipe.images && recipe.images.length > 0) ? recipe.images[0] : (recipe.image_url || '');
   $: imageCount = (recipe.images && recipe.images.length > 0) ? recipe.images.length : (recipe.image_url ? 1 : 0);
+  $: aggregateRating = recipe.aggregate_rating ?? ((recipe.upvotes_count || 0) - (recipe.downvotes_count || 0));
 </script>
 
 <div class="recipe-card" on:click={openDetails} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && openDetails()}>
@@ -73,15 +107,37 @@
       </div>
     {/if}
 
-    <!-- Favorite floating button -->
-    <button
-      class="fav-btn {recipe.is_favorite ? 'fav-active' : ''}"
-      on:click={toggleFavorite}
-      title={recipe.is_favorite ? 'Remove from favorites' : 'Add to favorites'}
-      aria-label="Toggle favorite"
-    >
-      {recipe.is_favorite ? '❤️' : '🤍'}
-    </button>
+    <!-- Thumbs Up / Thumbs Down / Rating Pill -->
+    <div class="vote-widget" on:click|stopPropagation role="none">
+      <button
+        type="button"
+        class="vote-btn upvote-btn {recipe.user_vote === 1 ? 'voted-up' : ''}"
+        on:click={handleUpvote}
+        title={recipe.user_vote === 1 ? 'Remove upvote' : `Upvote recipe (${recipe.upvotes_count || 0} users)`}
+        aria-label="Upvote recipe"
+        disabled={voting}
+      >
+        <span class="thumb-icon">👍</span>
+      </button>
+
+      <span
+        class="vote-score {aggregateRating > 0 ? 'score-positive' : aggregateRating < 0 ? 'score-negative' : 'score-zero'}"
+        title="Aggregate vote rating: {aggregateRating >= 0 ? '+' : ''}{aggregateRating} ({recipe.upvotes_count || 0} upvotes, {recipe.downvotes_count || 0} downvotes)"
+      >
+        {aggregateRating > 0 ? `+${aggregateRating}` : aggregateRating}
+      </span>
+
+      <button
+        type="button"
+        class="vote-btn downvote-btn {recipe.user_vote === -1 ? 'voted-down' : ''}"
+        on:click={handleDownvote}
+        title={recipe.user_vote === -1 ? 'Remove downvote' : `Downvote recipe (${recipe.downvotes_count || 0} users)`}
+        aria-label="Downvote recipe"
+        disabled={voting}
+      >
+        <span class="thumb-icon">👎</span>
+      </button>
+    </div>
 
     <!-- Difficulty & Cuisine Badges -->
     <div class="media-badges">
@@ -100,7 +156,7 @@
     <h3 class="recipe-title">{recipe.title}</h3>
     <p class="recipe-desc">{recipe.description}</p>
 
-    <!-- Key Metrics -->
+    <!-- Key Metrics including Votes and Duration -->
     <div class="recipe-metrics">
       <div class="metric" title="Total cooking duration">
         <span class="metric-icon">⏱️</span>
@@ -110,9 +166,10 @@
         <span class="metric-icon">👥</span>
         <span class="metric-val">{recipe.servings} servings</span>
       </div>
-      <div class="metric" title="Number of ingredients">
-        <span class="metric-icon">🥕</span>
-        <span class="metric-val">{recipe.ingredients ? recipe.ingredients.length : 0} items</span>
+      <div class="metric vote-metric" title="Total users who upvoted ({recipe.upvotes_count || 0}) or downvoted ({recipe.downvotes_count || 0})">
+        <span class="metric-icon">⭐</span>
+        <span class="metric-val">{aggregateRating >= 0 ? `+${aggregateRating}` : aggregateRating}</span>
+        <span class="vote-counts-sub">({recipe.upvotes_count || 0}👍 / {recipe.downvotes_count || 0}👎)</span>
       </div>
     </div>
 
@@ -202,28 +259,81 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
 
-  .fav-btn {
+  /* Floating Voting Widget */
+  .vote-widget {
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
-    background: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(4px);
-    border: none;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem 0.35rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 5;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .vote-widget:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .vote-btn {
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 50%;
-    width: 36px;
-    height: 36px;
+    width: 30px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 1.1rem;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    transition: transform 0.15s ease, background 0.15s ease;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    padding: 0;
   }
 
-  .fav-btn:hover {
-    transform: scale(1.15);
-    background: #ffffff;
+  .vote-btn:hover:not(:disabled) {
+    transform: scale(1.18);
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .upvote-btn.voted-up {
+    background: #dcfce7;
+    border-color: #86efac;
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+    transform: scale(1.08);
+  }
+
+  .downvote-btn.voted-down {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+    transform: scale(1.08);
+  }
+
+  .vote-score {
+    font-size: 0.8rem;
+    font-weight: 700;
+    min-width: 26px;
+    text-align: center;
+    padding: 0 0.15rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score-positive {
+    color: #15803d;
+  }
+
+  .score-negative {
+    color: #b91c1c;
+  }
+
+  .score-zero {
+    color: #64748b;
   }
 
   .media-badges {
@@ -266,6 +376,7 @@
     margin-bottom: 1rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -273,12 +384,13 @@
   .recipe-metrics {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.85rem;
     padding-top: 0.85rem;
     border-top: 1px solid var(--border-subtle);
     margin-top: auto;
     font-size: 0.8rem;
     color: var(--text-muted);
+    flex-wrap: wrap;
   }
 
   .metric {
@@ -287,9 +399,18 @@
     gap: 0.3rem;
   }
 
+  .vote-metric {
+    margin-left: auto;
+  }
+
   .metric-val {
     font-weight: 600;
     color: var(--text-main);
+  }
+
+  .vote-counts-sub {
+    font-size: 0.72rem;
+    color: var(--text-light);
   }
 
   .tags-row {
@@ -313,3 +434,4 @@
     padding: 0.15rem 0.25rem;
   }
 </style>
+

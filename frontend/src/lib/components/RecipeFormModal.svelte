@@ -24,7 +24,6 @@
   let tagsInput = '';
   let images = [''];
   let notes = '';
-  let is_favorite = false;
 
   // Dynamic lists
   let ingredients = [
@@ -49,7 +48,6 @@
       category = r.category || 'Main Course';
       tagsInput = (r.tags || []).join(', ');
       notes = r.notes || '';
-      is_favorite = !!r.is_favorite;
 
       if (r.images && r.images.length > 0) {
         images = [...r.images];
@@ -79,7 +77,6 @@
       tagsInput = '';
       images = [''];
       notes = '';
-      is_favorite = false;
       ingredients = [{ name: '', amount: 1, unit: '', notes: '' }];
       instructions = [{ step_number: 1, instruction: '', tip: '' }];
     }
@@ -188,7 +185,6 @@
       instructions: validInstructions,
       images: validImages,
       image_url: validImages.length > 0 ? validImages[0] : null,
-      is_favorite,
       notes: notes.trim() || null,
     };
 

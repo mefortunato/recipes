@@ -100,6 +100,9 @@ export const api = {
     if (params.max_time) query.set('max_time', params.max_time);
     if (params.difficulty && params.difficulty !== 'All') query.set('difficulty', params.difficulty);
     if (params.is_favorite !== undefined && params.is_favorite !== null) query.set('is_favorite', params.is_favorite);
+    if (params.user_voted) query.set('user_voted', params.user_voted);
+    if (params.sort_by) query.set('sort_by', params.sort_by);
+    if (params.sort_order !== undefined && params.sort_order !== null) query.set('sort_order', params.sort_order);
     if (params.page) query.set('page', params.page);
     if (params.page_size) query.set('page_size', params.page_size);
 
@@ -109,6 +112,31 @@ export const api = {
 
   async getRecipe(id) {
     return request(`/recipes/${id}`);
+  },
+
+  async voteRecipe(id, vote, toggle = false) {
+    return request(`/recipes/${id}/vote`, {
+      method: 'POST',
+      body: JSON.stringify({ vote, toggle }),
+    });
+  },
+
+  async upvoteRecipe(id) {
+    return request(`/recipes/${id}/upvote`, {
+      method: 'POST',
+    });
+  },
+
+  async downvoteRecipe(id) {
+    return request(`/recipes/${id}/downvote`, {
+      method: 'POST',
+    });
+  },
+
+  async clearRecipeVote(id) {
+    return request(`/recipes/${id}/vote`, {
+      method: 'DELETE',
+    });
   },
 
   async createRecipe(recipeData) {
