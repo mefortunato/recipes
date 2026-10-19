@@ -8,9 +8,8 @@ A modern, responsive full-stack recipe book application built with **FastAPI**, 
 
 - **Full Recipe Management (CRUD)**: Create, browse, update, and delete recipes with rich metadata (ingredients, step-by-step instructions with chef tips, categories, cuisines, dietary tags, cooking times, and multi-image photo galleries).
 - **Dynamic Serving Scaler**: Seamlessly adjust serving sizes (+ / -) in real time—ingredient quantities automatically scale to match your required portion size.
-- **Interactive Cooking Checklist**: Check off ingredients as you prepare your mise-en-place and mark off cooking steps as you progress.
-- **Full-Text Search & Multi-Criteria Filtering**: Search by title, ingredient, tag, or cuisine; filter by category, difficulty, max cooking time, or favorites.
-- **Auto-Seeding**: Comes pre-loaded with curated, delicious recipes from around the world (Artisan Margherita Pizza, Creamy Tuscan Garlic Chicken, Beef Barbacoa Tacos, Thai Coconut Red Curry, Mediterranean Quinoa Salad, Warm Molten Chocolate Lava Cakes).
+- **Full-Text Search & Multi-Criteria Filtering**: Search by title, ingredient, tag, or cuisine; filter by category, difficulty, max cooking time, or your upvoted recipes.
+- **User-Specific Thumbs Up / Down Voting & Aggregate Rating**: Users can upvote (👍) or downvote (👎) recipes; recipes track total upvotes, downvotes, and net aggregate rating, and can be sorted by aggregate vote rating.
 - **Modern Python with `uv`**: Ultra-fast dependency resolution and virtual environment management via Astral's `uv`.
 - **One-Command Local Dev Environment**: `./scripts/dev.sh` boots local MongoDB container, launches FastAPI with hot reload (`:8000`), and runs Vite dev server (`:5173`) with automated process cleanup on exit.
 - **Self-Contained Multi-Stage Container**: Root [`Dockerfile`](file:///home/mfort/projects/recipes/Dockerfile) packages the pre-built Svelte SPA and FastAPI backend into a single container for local Docker Compose and Google Cloud Run.

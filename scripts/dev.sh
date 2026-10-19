@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
+export PATH="${HOME}/.local/bin:${PATH}"
 
 # 1. Load variables from root .env if present
 if [ -f "${ROOT_DIR}/.env" ]; then
