@@ -40,6 +40,19 @@ async def test_auth_config_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_health_endpoints():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "healthy"
+
+        resp_live = await client.get("/health/live")
+        assert resp_live.status_code == 200
+        assert resp_live.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_google_verify_without_client_secret():
     """Verify Google Identity Services ID token verification does NOT require GOOGLE_CLIENT_SECRET."""
     from unittest.mock import patch

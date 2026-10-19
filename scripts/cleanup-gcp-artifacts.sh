@@ -14,22 +14,91 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
-# 1. Check gcloud CLI
+# 1. Load configuration from .env if present
+CALLER_PROJECT_ID="${GCP_PROJECT_ID:-}"
+
+if [ -f "${ROOT_DIR}/.env" ]; then
+  set -a
+  source <(grep -v '^#' "${ROOT_DIR}/.env" | grep -v '^$')
+  set +a
+fi
+
+[ -n "$CALLER_PROJECT_ID" ] && GCP_PROJECT_ID="$CALLER_PROJECT_ID"
+
+# 2. Defaults
+PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || echo "")}"
+REGION="${GCP_REGION:-${REGION:-us-central1}}"
+SERVICE_NAME="${GCP_SERVICE_NAME:-${SERVICE_NAME:-recipe-book}}"
+AR_REPO="${GCP_ARTIFACT_REPO:-${AR_REPO:-cloud-run-source-deploy}}"
+KEEP_COUNT="${KEEP_COUNT:-1}"
+PRUNE_NOW=false
+
+print_help() {
+  echo "Recipe Book - GCP Build Artifacts & Storage Manager"
+  echo ""
+  echo "Usage: ./scripts/cleanup-gcp-artifacts.sh [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  -p, --project <ID>     GCP Project ID (default: GCP_PROJECT_ID or active gcloud project)"
+  echo "  -r, --region <REGION>  GCP Region (default: us-central1)"
+  echo "  -s, --service <NAME>   Cloud Run service name (default: recipe-book)"
+  echo "      --repo <REPO>      Artifact Registry repo (default: cloud-run-source-deploy)"
+  echo "      --keep <N>         Number of recent image versions to keep (default: 1)"
+  echo "      --prune-now        Run immediate manual purge of stale images"
+  echo "  -h, --help             Show this help message"
+  echo ""
+}
+
+# 3. Parse CLI Arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -p|--project)
+      PROJECT_ID="$2"
+      shift 2
+      ;;
+    -r|--region)
+      REGION="$2"
+      shift 2
+      ;;
+    -s|--service)
+      SERVICE_NAME="$2"
+      shift 2
+      ;;
+    --repo)
+      AR_REPO="$2"
+      shift 2
+      ;;
+    --keep)
+      KEEP_COUNT="$2"
+      shift 2
+      ;;
+    --prune-now)
+      PRUNE_NOW=true
+      shift
+      ;;
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    *)
+      echo "Unknown flag: $1"
+      print_help
+      exit 1
+      ;;
+  esac
+done
+
+# 4. Check gcloud CLI
 if ! command -v gcloud &> /dev/null; then
   echo "❌ Error: Google Cloud SDK (gcloud) is not installed."
   exit 1
 fi
 
-PROJECT_ID=$(gcloud config get-value project 2>/dev/null || true)
 if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "(unset)" ]; then
-  echo "❌ Error: No GCP project active. Run: gcloud config set project YOUR_PROJECT_ID"
+  echo "❌ Error: No GCP Project ID specified."
+  echo "Please set GCP_PROJECT_ID in .env or pass --project <PROJECT_ID>."
   exit 1
 fi
-
-REGION="${REGION:-us-central1}"
-SERVICE_NAME="${SERVICE_NAME:-recipe-book}"
-AR_REPO="${AR_REPO:-cloud-run-source-deploy}"
-KEEP_COUNT="${KEEP_COUNT:-1}"
 
 echo "======================================================"
 echo "🧹 GCP Storage & Build Artifacts Manager"
@@ -40,7 +109,7 @@ echo "======================================================"
 # --------------------------------------------------------------
 # 1. Configure Cloud Storage Lifecycle Rule for Source Archives
 # --------------------------------------------------------------
-SOURCE_BUCKET=$(gcloud storage buckets list --format="value(name)" --filter="name ~ run-sources-${PROJECT_ID}" 2>/dev/null | head -n 1 || true)
+SOURCE_BUCKET=$(gcloud storage buckets list --project "${PROJECT_ID}" --format="value(name)" --filter="name ~ run-sources-${PROJECT_ID}" 2>/dev/null | head -n 1 || true)
 
 if [ -n "$SOURCE_BUCKET" ]; then
   echo ""
@@ -62,17 +131,17 @@ if [ -n "$SOURCE_BUCKET" ]; then
   ]
 }
 EOF
-  gcloud storage buckets update "gs://${SOURCE_BUCKET}" --lifecycle-file="${LIFECYCLE_TMP}" >/dev/null 2>&1
-  gcloud storage buckets update "gs://${SOURCE_BUCKET}" --clear-soft-delete >/dev/null 2>&1
+  gcloud storage buckets update "gs://${SOURCE_BUCKET}" --project "${PROJECT_ID}" --lifecycle-file="${LIFECYCLE_TMP}" >/dev/null 2>&1
+  gcloud storage buckets update "gs://${SOURCE_BUCKET}" --project "${PROJECT_ID}" --clear-soft-delete >/dev/null 2>&1
   rm -f "${LIFECYCLE_TMP}"
   echo "   ✓ Lifecycle policy active: deletes source zips older than 1 day."
   echo "   ✓ Soft-delete retention set to 0 to prevent lingering storage."
   
   # Display current bucket usage
-  OBJECTS_COUNT=$(gcloud storage ls --recursive "gs://${SOURCE_BUCKET}/**" 2>/dev/null | wc -l || echo "0")
+  OBJECTS_COUNT=$(gcloud storage ls --project "${PROJECT_ID}" --recursive "gs://${SOURCE_BUCKET}/**" 2>/dev/null | wc -l || echo "0")
   echo "   Current objects stored: ${OBJECTS_COUNT} (Free tier limit: 5 GB)"
 else
-  echo "ℹ️  No run-sources bucket found yet."
+  echo "ℹ️  No run-sources bucket found for project ${PROJECT_ID} yet."
 fi
 
 # --------------------------------------------------------------
@@ -82,7 +151,7 @@ echo ""
 echo "🐳 2. Artifact Registry (Container Images)"
 echo "   Repository: ${AR_REPO} (${REGION})"
 
-REPO_EXISTS=$(gcloud artifacts repositories describe "${AR_REPO}" --location="${REGION}" --format="value(name)" 2>/dev/null || true)
+REPO_EXISTS=$(gcloud artifacts repositories describe "${AR_REPO}" --location="${REGION}" --project "${PROJECT_ID}" --format="value(name)" 2>/dev/null || true)
 
 if [ -n "$REPO_EXISTS" ]; then
   POLICY_TMP=$(mktemp)
@@ -112,6 +181,7 @@ EOF
 
   gcloud artifacts repositories set-cleanup-policies "${AR_REPO}" \
     --location="${REGION}" \
+    --project "${PROJECT_ID}" \
     --policy="${POLICY_TMP}" \
     --no-dry-run >/dev/null 2>&1
   rm -f "${POLICY_TMP}"
@@ -125,12 +195,12 @@ fi
 # --------------------------------------------------------------
 # 3. Optional Immediate Cleanup: Prune Untagged / Stale Images
 # --------------------------------------------------------------
-if [ "$1" = "--prune-now" ] && [ -n "$REPO_EXISTS" ]; then
+if [ "${PRUNE_NOW}" = true ] && [ -n "$REPO_EXISTS" ]; then
   echo ""
   echo "⚡ Running immediate manual prune (keeping latest ${KEEP_COUNT} images)..."
 
   # Find active Cloud Run image digest
-  ACTIVE_IMAGE=$(gcloud run services describe "${SERVICE_NAME}" --region="${REGION}" --format="value(spec.template.spec.containers[0].image)" 2>/dev/null || true)
+  ACTIVE_IMAGE=$(gcloud run services describe "${SERVICE_NAME}" --region="${REGION}" --project "${PROJECT_ID}" --format="value(spec.template.spec.containers[0].image)" 2>/dev/null || true)
   ACTIVE_DIGEST=""
   if [[ "$ACTIVE_IMAGE" == *"@"* ]]; then
     ACTIVE_DIGEST="${ACTIVE_IMAGE#*@}"
@@ -139,14 +209,14 @@ if [ "$1" = "--prune-now" ] && [ -n "$REPO_EXISTS" ]; then
   PACKAGE_PATH="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}"
 
   # Get all image digests sorted by creation date (newest first)
-  ALL_DIGESTS=$(gcloud artifacts docker images list "${PACKAGE_PATH}" --format="value(version)" --sort-by="~create_time" 2>/dev/null || true)
+  ALL_DIGESTS=$(gcloud artifacts docker images list "${PACKAGE_PATH}" --project "${PROJECT_ID}" --format="value(version)" --sort-by="~create_time" 2>/dev/null || true)
 
   INDEX=0
   for DIGEST in ${ALL_DIGESTS}; do
     INDEX=$((INDEX + 1))
     if [ "${INDEX}" -gt "${KEEP_COUNT}" ] && [ "${DIGEST}" != "${ACTIVE_DIGEST}" ]; then
       echo "   🗑️ Deleting older image version: ${DIGEST:0:19}..."
-      gcloud artifacts docker images delete "${PACKAGE_PATH}@${DIGEST}" --delete-tags --quiet 2>/dev/null || true
+      gcloud artifacts docker images delete "${PACKAGE_PATH}@${DIGEST}" --project "${PROJECT_ID}" --delete-tags --quiet 2>/dev/null || true
     fi
   done
   echo "   ✓ Immediate prune complete."
@@ -160,7 +230,7 @@ echo "======================================================"
 echo "📊 Storage & Free Tier Status"
 echo "======================================================"
 if [ -n "$REPO_EXISTS" ]; then
-  REPO_SIZE_STR=$(gcloud artifacts repositories describe "${AR_REPO}" --location="${REGION}" 2>&1 | grep -i "Repository Size" | head -n 1 | awk '{print $3}' || echo "N/A")
+  REPO_SIZE_STR=$(gcloud artifacts repositories describe "${AR_REPO}" --location="${REGION}" --project "${PROJECT_ID}" 2>&1 | grep -i "Repository Size" | head -n 1 | awk '{print $3}' || echo "N/A")
   echo "Artifact Registry Storage: ${REPO_SIZE_STR} (Free tier limit: 500 MB)"
 fi
 echo ""

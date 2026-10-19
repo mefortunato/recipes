@@ -8,6 +8,12 @@ from app.database import get_database, db_manager
 router = APIRouter(prefix="/health", tags=["Health & Observability"])
 
 
+@router.get("", summary="General health probe")
+async def health_check() -> Dict[str, str]:
+    """Returns 200 OK healthy status for Cloud Run and automated test suites."""
+    return {"status": "healthy", "service": "recipes"}
+
+
 @router.get("/live", summary="Liveness probe for container orchestrators")
 async def liveness_probe() -> Dict[str, str]:
     """Returns 200 OK if the web server process is running and accepting HTTP requests."""

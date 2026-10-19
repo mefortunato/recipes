@@ -85,9 +85,14 @@ To run the complete application with Docker Compose:
 ### Quick Start (One Command)
 Run both backend and frontend development servers with live reload connected to local MongoDB:
 ```bash
-./scripts/dev.sh
+./dev.sh
 ```
-*This automatically starts the local MongoDB container (port 27017), forces `MONGODB_URI` to use the local MongoDB container instead of production Atlas, and launches FastAPI (`http://127.0.0.1:8000`) and the Vite dev server (`http://localhost:5173`). Press `Ctrl+C` to cleanly terminate both processes and release ports.*
+*This automatically checks if MongoDB is running (starting the Docker container if needed), verifies backend Python dependencies (`uv sync`) and frontend npm packages (`npm install`), forces `MONGODB_URI` to use local MongoDB instead of production Atlas, and launches FastAPI (`http://127.0.0.1:8000`) and Vite dev server (`http://localhost:5173`). Press `Ctrl+C` to cleanly terminate all processes and free the ports.*
+
+You can also run automated production Docker container tests locally before deploying:
+```bash
+./scripts/test-docker.sh
+```
 
 ---
 
@@ -143,7 +148,8 @@ Or run the all-in-one build and verification script:
 
 Gourmet Vault employs role-based access control (RBAC):
 - **Public & Foodie Viewers**: Can browse, filter, search, view recipes, scale serving portions, and utilize the interactive mise-en-place checklist.
-- **Authorized Chefs / Editors**: Can add new recipes, update existing recipes, upload/reorder gallery images, delete recipes, and seed curated datasets.
+- **Authorized Chefs / Editors**: Can add new recipes, update existing recipes, upload/reorder gallery images, and delete recipes.
+- **Administrators**: Full system permissions, user role management, and database seeding verification in the Admin Panel.
 
 ### 1. Google Cloud Console Setup
 1. Open the [Google Cloud Console Credentials](https://console.cloud.google.com/apis/credentials) page for your project.
@@ -154,22 +160,18 @@ Gourmet Vault employs role-based access control (RBAC):
    - `http://localhost:5173` (Vite dev server)
    - `http://localhost:8000` (FastAPI local server)
    - `https://YOUR_SERVICE_URL.run.app` (Cloud Run deployment)
-5. Under **Authorized redirect URIs**, add:
-   - `http://localhost:8080/api/v1/auth/google/callback`
-   - `http://localhost:5173/api/v1/auth/google/callback`
-   - `http://localhost:8000/api/v1/auth/google/callback`
-   - `https://YOUR_SERVICE_URL.run.app/api/v1/auth/google/callback`
-6. Copy the generated **Client ID** and **Client Secret** into your `.env` file:
+5. Copy the generated **Client ID** into your `.env` file (`GOOGLE_CLIENT_SECRET` is **not required** for Google Identity Services 1-click authentication):
    ```env
    GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-your-secret
+   # GOOGLE_CLIENT_SECRET is optional (not needed for Google login)
+   GOOGLE_CLIENT_SECRET=
    ```
 
 ### 2. Configure Initial Administrator (Bootstrap Admin)
 In `.env`, define the initial privileged administrator email:
 ```env
 # Specific administrator/owner email seeded with bootstrap admin privileges:
-ALLOWED_EDITOR_EMAILS=mef231@gmail.com
+ALLOWED_EDITOR_EMAILS=chef.owner@example.com
 ```
 When this user signs in via Google OAuth, they are automatically granted **Admin** permissions (`is_admin=True`, `can_edit=True`, `is_bootstrap=True`).
 
@@ -226,14 +228,18 @@ The application is packaged as a single self-contained multi-stage Docker contai
    gcloud init
    ```
 
-2. Set your active project:
-   ```bash
-   gcloud config set project YOUR_GCP_PROJECT_ID
+2. Configure `GCP_PROJECT_ID` in your `.env` (prevents needing to set project in `gcloud` when switching workspaces):
+   ```env
+   GCP_PROJECT_ID=my-recipes-app
+   GCP_REGION=us-central1
+   GCP_SERVICE_NAME=recipe-book
    ```
 
 3. Run the automated deployment script:
    ```bash
    ./scripts/deploy-gcp.sh
+   # Or with explicit overrides:
+   ./scripts/deploy-gcp.sh --project my-recipes-app --region us-central1 --dry-run
    ```
 
 This will automatically:
@@ -283,7 +289,7 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 | `GET` | `/api/v1/recipes/meta/tags` | List all unique tags across recipes |
 | `GET` | `/api/v1/recipes/meta/cuisines`| List all unique cuisines |
 | `GET` | `/api/v1/recipes/meta/categories`| List all meal categories |
-| `POST` | `/api/v1/recipes/seed` | Seed default curated recipes into database |
+| `POST` | `/api/v1/recipes/seed` | Seed default curated recipes into database (Admin only, requires verification if DB > 0) |
 
 ---
 
