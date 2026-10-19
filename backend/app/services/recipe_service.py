@@ -127,16 +127,31 @@ class RecipeService:
         return await self.repository.get_distinct_categories()
 
     async def seed_recipes(self, force: bool = False) -> int:
-        """Seed sample culinary recipes if the collection is empty or forced."""
+        """Seed sample culinary recipes if the collection is empty or forced, and backfill missing images."""
         total = await self.repository.count_total()
-        if total > 0 and not force:
-            logger.info("Database already contains %d recipes, skipping seed.", total)
-            return 0
+        if total == 0 or force:
+            if force and total > 0:
+                await self.repository.collection.delete_many({})
+            inserted_count = 0
+            for sample in SAMPLE_RECIPES:
+                await self.repository.create(sample)
+                inserted_count += 1
+            logger.info("Successfully seeded %d sample recipes.", inserted_count)
+            return inserted_count
 
-        inserted_count = 0
+        # If database already contains recipes, ensure existing sample recipes have their images backfilled
+        updated_count = 0
         for sample in SAMPLE_RECIPES:
-            await self.repository.create(sample)
-            inserted_count += 1
+            existing = await self.repository.collection.find_one({"title": sample.title})
+            if existing and (not existing.get("images") or len(existing.get("images", [])) < len(sample.images)):
+                await self.repository.collection.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {"images": sample.images, "image_url": sample.image_url}}
+                )
+                updated_count += 1
 
-        logger.info("Successfully seeded %d sample recipes.", inserted_count)
-        return inserted_count
+        if updated_count > 0:
+            logger.info("Backfilled images for %d existing sample recipes.", updated_count)
+        else:
+            logger.info("Database already contains %d recipes, skipping seed.", total)
+        return 0
