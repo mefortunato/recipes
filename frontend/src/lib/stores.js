@@ -56,7 +56,7 @@ export function showToast(message, type = 'info', duration = 3500) {
 export async function initAuth() {
   authLoading.set(true);
 
-  // Check URL parameters from OAuth callback redirect
+  // Check URL parameters from OAuth callback redirect or deep-links
   if (typeof window !== 'undefined') {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('auth_success')) {
@@ -64,6 +64,9 @@ export async function initAuth() {
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (urlParams.get('error') === 'oauth_failed') {
       showToast('Google Sign-In was cancelled or failed.', 'error');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (urlParams.get('open_auth')) {
+      isAuthModalOpen.set(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }

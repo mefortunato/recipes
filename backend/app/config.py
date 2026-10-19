@@ -32,9 +32,13 @@ class Settings(BaseSettings):
     )
     frontend_url: str = Field(default="", description="Frontend URL for CORS / production redirects")
 
+    # Google Cloud & Deployment Configuration
+    gcp_project_id: str = Field(default="", description="Google Cloud Project ID")
+
     # Google OAuth 2.0 & JWT Authentication
     google_client_id: str = Field(default="", description="Google OAuth 2.0 Web Client ID")
-    google_client_secret: str = Field(default="", description="Google OAuth 2.0 Web Client Secret")
+    google_client_secret: Optional[str] = Field(default="", description="Google OAuth 2.0 Web Client Secret (optional)")
+    dev_login_enabled: bool = Field(default=False, description="Enable quick development login profiles")
     jwt_secret: str = Field(default="super-secret-recipes-jwt-token-key-2026", description="Secret key for JWT")
     jwt_algorithm: str = Field(default="HS256", description="JWT encryption algorithm")
     access_token_expire_minutes: int = Field(default=60 * 24 * 7, description="Access token expiration (7 days)")

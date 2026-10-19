@@ -25,8 +25,8 @@ async def get_auth_config():
     settings = get_settings()
     return AuthConfigResponse(
         google_client_id=settings.google_client_id or "",
-        google_auth_enabled=bool(settings.google_client_id and settings.google_client_secret),
-        dev_login_enabled=False,
+        google_auth_enabled=bool(settings.google_client_id),
+        dev_login_enabled=bool(settings.dev_login_enabled),
         allowed_editor_emails=settings.editor_emails_list,
     )
 
@@ -38,10 +38,14 @@ async def google_login(request: Request):
     if not settings.google_client_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="GOOGLE_CLIENT_ID is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.",
+            detail="GOOGLE_CLIENT_ID is not configured in .env.",
         )
 
     base_url = settings.frontend_url.rstrip("/") if settings.frontend_url else str(request.base_url).rstrip("/")
+    if not settings.google_client_secret:
+        # If client secret is not configured, redirect to client-side Google Identity Services
+        return RedirectResponse(url=f"{base_url}/?open_auth=1")
+
     redirect_uri = f"{base_url}/api/v1/auth/google/callback"
 
     params = {
@@ -86,7 +90,18 @@ async def google_callback(code: str, request: Request, response: Response):
 async def verify_google(body: GoogleVerifyRequest, response: Response):
     """Verifies a Google ID token passed directly from client-side Google button / One-Tap."""
     settings = get_settings()
-    user_info = await verify_google_credential(body.credential)
+    user_info = None
+
+    if body.credential:
+        user_info = await verify_google_credential(body.credential)
+    elif settings.dev_login_enabled and body.email:
+        user_info = {
+            "google_id": body.google_id or f"dev_{body.email.replace('@', '_').replace('.', '_')}",
+            "email": body.email,
+            "name": body.name or body.email.split("@")[0].capitalize(),
+            "picture": body.picture or f"https://api.dicebear.com/7.x/bottts/svg?seed={body.name or body.email}",
+        }
+
     if not user_info:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

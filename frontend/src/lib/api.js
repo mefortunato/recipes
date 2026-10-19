@@ -33,10 +33,13 @@ export const api = {
     return request('/auth/config');
   },
 
-  async verifyGoogleCredential(credential) {
+  async verifyGoogleCredential(credentialOrPayload) {
+    const payload = typeof credentialOrPayload === 'string'
+      ? { credential: credentialOrPayload }
+      : credentialOrPayload;
     const data = await request('/auth/google/verify', {
       method: 'POST',
-      body: JSON.stringify({ credential }),
+      body: JSON.stringify(payload),
     });
     if (data?.access_token && typeof localStorage !== 'undefined') {
       localStorage.setItem('recipe_access_token', data.access_token);

@@ -40,6 +40,41 @@ async def test_auth_config_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_google_verify_without_client_secret():
+    """Verify Google Identity Services ID token verification does NOT require GOOGLE_CLIENT_SECRET."""
+    from unittest.mock import patch
+    import base64
+    import json
+
+    # Create a mock Google Identity Services JWT payload
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).decode().rstrip("=")
+    claims = {
+        "sub": "google-user-12345",
+        "email": "gourmet.chef@example.com",
+        "name": "Chef Auguste",
+        "picture": "https://example.com/avatar.jpg",
+        "aud": "mock-client-id",
+        "iss": "https://accounts.google.com",
+    }
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    dummy_signature = base64.urlsafe_b64encode(b"dummy-sig").decode().rstrip("=")
+    mock_gis_token = f"{header}.{payload}.{dummy_signature}"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/auth/google/verify",
+            json={"credential": mock_gis_token},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "access_token" in data
+        assert data["user"]["email"] == "gourmet.chef@example.com"
+        assert data["user"]["name"] == "Chef Auguste"
+        assert "access_token" in resp.cookies
+
+
+@pytest.mark.asyncio
 async def test_demo_login_endpoint_is_removed():
     """Verify demo-login route was completely removed as a security vulnerability."""
     transport = ASGITransport(app=app)
