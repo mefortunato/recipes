@@ -13,6 +13,39 @@
 
   let imageError = false;
   let voting = false;
+  let currentImageIndex = 0;
+
+  $: recipeImages = (recipe.images && recipe.images.length > 0)
+    ? recipe.images
+    : (recipe.image_url ? [recipe.image_url] : []);
+  $: totalImages = recipeImages.length;
+  $: activeImage = recipeImages[currentImageIndex] || '';
+
+  // Reset image index if out of range when recipe changes
+  $: if (currentImageIndex >= totalImages && totalImages > 0) {
+    currentImageIndex = 0;
+  }
+
+  function nextImage(e) {
+    e.stopPropagation();
+    if (totalImages <= 1) return;
+    imageError = false;
+    currentImageIndex = (currentImageIndex + 1) % totalImages;
+  }
+
+  function prevImage(e) {
+    e.stopPropagation();
+    if (totalImages <= 1) return;
+    imageError = false;
+    currentImageIndex = (currentImageIndex - 1 + totalImages) % totalImages;
+  }
+
+  function selectImage(idx, e) {
+    e.stopPropagation();
+    if (currentImageIndex === idx) return;
+    imageError = false;
+    currentImageIndex = idx;
+  }
 
   function openDetails() {
     activeRecipe.set(recipe);
@@ -77,18 +110,16 @@
     return 'badge-purple';
   }
 
-  $: primaryImage = (recipe.images && recipe.images.length > 0) ? recipe.images[0] : (recipe.image_url || '');
-  $: imageCount = (recipe.images && recipe.images.length > 0) ? recipe.images.length : (recipe.image_url ? 1 : 0);
   $: aggregateRating = recipe.aggregate_rating ?? ((recipe.upvotes_count || 0) - (recipe.downvotes_count || 0));
 </script>
 
 <div class="recipe-card" on:click={openDetails} role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && openDetails()}>
   <!-- Card Header & Image -->
   <div class="card-media">
-    {#if primaryImage && !imageError}
+    {#if activeImage && !imageError}
       <img
-        src={primaryImage}
-        alt={recipe.title}
+        src={activeImage}
+        alt="{recipe.title} (photo {currentImageIndex + 1})"
         class="recipe-img"
         on:error={() => (imageError = true)}
         loading="lazy"
@@ -99,11 +130,49 @@
       </div>
     {/if}
 
-    <!-- Photo count indicator badge -->
-    {#if imageCount > 1}
-      <div class="photo-count-badge" title="{imageCount} photos available">
+    <!-- Subtle gradient overlays for badge/controls contrast -->
+    <div class="media-overlay-top"></div>
+    <div class="media-overlay-bottom"></div>
+
+    <!-- Multi-photo controls (counter badge, carousel arrows, pagination dots) -->
+    {#if totalImages > 1}
+      <div class="photo-count-badge" title="{totalImages} photos available (photo {currentImageIndex + 1} of {totalImages})">
         <span class="photo-icon">📷</span>
-        <span>{imageCount}</span>
+        <span>{currentImageIndex + 1}/{totalImages}</span>
+      </div>
+
+      <!-- Arrow navigation buttons -->
+      <button
+        type="button"
+        class="gallery-arrow gallery-arrow-prev"
+        on:click={prevImage}
+        title="Previous photo"
+        aria-label="Previous photo"
+      >
+        <span aria-hidden="true">‹</span>
+      </button>
+
+      <button
+        type="button"
+        class="gallery-arrow gallery-arrow-next"
+        on:click={nextImage}
+        title="Next photo"
+        aria-label="Next photo"
+      >
+        <span aria-hidden="true">›</span>
+      </button>
+
+      <!-- Carousel indicator dots -->
+      <div class="gallery-dots" on:click|stopPropagation role="none">
+        {#each recipeImages as _, idx}
+          <button
+            type="button"
+            class="gallery-dot {idx === currentImageIndex ? 'active' : ''}"
+            on:click={(e) => selectImage(idx, e)}
+            title="Switch to photo {idx + 1}"
+            aria-label="Switch to photo {idx + 1}"
+          ></button>
+        {/each}
       </div>
     {/if}
 
@@ -210,7 +279,7 @@
   .card-media {
     position: relative;
     width: 100%;
-    height: 195px;
+    height: 260px;
     background-color: var(--bg-subtle);
     overflow: hidden;
   }
@@ -219,11 +288,35 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
+    object-position: center;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    display: block;
   }
 
   .recipe-card:hover .recipe-img {
     transform: scale(1.04);
+  }
+
+  .media-overlay-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .media-overlay-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0) 100%);
+    pointer-events: none;
+    z-index: 1;
   }
 
   .fallback-img {
@@ -237,6 +330,90 @@
 
   .fallback-icon {
     font-size: 3.5rem;
+  }
+
+  .gallery-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: #1e293b;
+    font-size: 1.4rem;
+    line-height: 1;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+    z-index: 4;
+    opacity: 0;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+    padding: 0;
+  }
+
+  .gallery-arrow-prev {
+    left: 0.65rem;
+  }
+
+  .gallery-arrow-next {
+    right: 0.65rem;
+  }
+
+  .recipe-card:hover .gallery-arrow,
+  .gallery-arrow:focus {
+    opacity: 1;
+  }
+
+  .gallery-arrow:hover {
+    background: #ffffff;
+    transform: translateY(-50%) scale(1.15);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+    color: var(--primary);
+  }
+
+  .gallery-dots {
+    position: absolute;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    z-index: 3;
+    padding: 0.25rem 0.5rem;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(6px);
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .gallery-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .gallery-dot:hover {
+    background: rgba(255, 255, 255, 0.9);
+    transform: scale(1.2);
+  }
+
+  .gallery-dot.active {
+    width: 14px;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
   }
 
   .photo-count-badge {

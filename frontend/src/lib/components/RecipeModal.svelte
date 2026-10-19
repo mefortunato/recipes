@@ -207,7 +207,7 @@
         {#if recipeImages.length > 0}
           <img
             src={recipeImages[activeImageIndex]}
-            alt={$activeRecipe.title}
+            alt="{$activeRecipe.title} (photo {activeImageIndex + 1} of {recipeImages.length})"
             class="hero-image"
           />
 
@@ -220,7 +220,7 @@
               aria-label="Previous image"
               title="Previous photo (Left arrow)"
             >
-              ‹
+              <span aria-hidden="true">‹</span>
             </button>
             <button
               type="button"
@@ -229,12 +229,25 @@
               aria-label="Next image"
               title="Next photo (Right arrow)"
             >
-              ›
+              <span aria-hidden="true">›</span>
             </button>
 
             <!-- Photo Counter Pill -->
             <div class="hero-counter">
               <span>📷 {activeImageIndex + 1} / {recipeImages.length}</span>
+            </div>
+
+            <!-- In-Hero Indicator Dots matching card scrolling gallery -->
+            <div class="hero-dots" on:click|stopPropagation role="none">
+              {#each recipeImages as _, idx}
+                <button
+                  type="button"
+                  class="hero-dot {idx === activeImageIndex ? 'active' : ''}"
+                  on:click={(e) => setImage(idx, e)}
+                  title="Switch to photo {idx + 1}"
+                  aria-label="Switch to photo {idx + 1}"
+                ></button>
+              {/each}
             </div>
           {/if}
         {:else}
@@ -254,16 +267,20 @@
       <!-- Thumbnail Strip if multiple images -->
       {#if recipeImages.length > 1}
         <div class="thumbnails-strip">
-          {#each recipeImages as imgUrl, idx}
-            <button
-              type="button"
-              class="thumb-btn {idx === activeImageIndex ? 'active-thumb' : ''}"
-              on:click={(e) => setImage(idx, e)}
-              title="View photo {idx + 1}"
-            >
-              <img src={imgUrl} alt="Thumbnail {idx + 1}" class="thumb-img" />
-            </button>
-          {/each}
+          <span class="thumbnails-label">Photos ({recipeImages.length}):</span>
+          <div class="thumbnails-scroll">
+            {#each recipeImages as imgUrl, idx}
+              <button
+                type="button"
+                class="thumb-btn {idx === activeImageIndex ? 'active-thumb' : ''}"
+                on:click={(e) => setImage(idx, e)}
+                title="View photo {idx + 1}"
+              >
+                <img src={imgUrl} alt="Thumbnail {idx + 1}" class="thumb-img" />
+                <span class="thumb-index">{idx + 1}</span>
+              </button>
+            {/each}
+          </div>
         </div>
       {/if}
 
@@ -515,145 +532,227 @@
     overflow-y: auto;
     position: relative;
     box-shadow: var(--shadow-xl);
-    display: flex;
-    flex-direction: column;
+    display: block;
   }
 
   .close-btn {
     position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: rgba(255, 255, 255, 0.9);
-    border: none;
+    top: 1.25rem;
+    right: 1.25rem;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 50%;
-    width: 36px;
-    height: 36px;
-    font-size: 1.1rem;
+    width: 38px;
+    height: 38px;
+    font-size: 1.15rem;
     font-weight: 700;
-    color: var(--text-main);
+    color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    z-index: 10;
-    box-shadow: var(--shadow-md);
+    z-index: 25;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
   }
 
   .close-btn:hover {
-    background: #ffffff;
+    background: rgba(15, 23, 42, 0.95);
     transform: scale(1.1);
   }
 
   .modal-hero {
     position: relative;
     width: 100%;
-    height: 280px;
-    background: #292524;
+    height: 380px;
+    min-height: 380px;
+    background: #1c1917;
     overflow: hidden;
+    display: block;
   }
 
   .hero-image {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: opacity 0.2s ease;
+    object-position: center;
+    transition: opacity 0.25s ease;
   }
 
   .hero-nav-btn {
     position: absolute;
-    top: 45%;
+    top: 50%;
     transform: translateY(-50%);
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(6px);
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.3);
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
+    font-size: 1.6rem;
     font-weight: 700;
     line-height: 1;
     cursor: pointer;
     z-index: 15;
-    transition: all 0.15s ease;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    transition: all 0.18s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   }
 
   .hero-nav-btn:hover {
-    background: rgba(15, 23, 42, 0.85);
-    transform: translateY(-50%) scale(1.1);
+    background: rgba(15, 23, 42, 0.9);
+    transform: translateY(-50%) scale(1.12);
   }
 
   .prev-btn {
-    left: 1rem;
+    left: 1.25rem;
   }
 
   .next-btn {
-    right: 1rem;
+    right: 1.25rem;
   }
 
   .hero-counter {
     position: absolute;
-    top: 1rem;
-    left: 1rem;
-    background: rgba(15, 23, 42, 0.7);
-    backdrop-filter: blur(4px);
+    top: 1.25rem;
+    left: 1.25rem;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(6px);
     color: #ffffff;
-    font-size: 0.76rem;
+    font-size: 0.8rem;
     font-weight: 700;
-    padding: 0.25rem 0.65rem;
+    padding: 0.3rem 0.75rem;
     border-radius: 9999px;
     z-index: 15;
     border: 1px solid rgba(255, 255, 255, 0.2);
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.3rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .hero-dots {
+    position: absolute;
+    top: 1.25rem;
+    right: 4.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    z-index: 15;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(6px);
+    padding: 0.35rem 0.65rem;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .hero-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .hero-dot:hover {
+    background: rgba(255, 255, 255, 0.9);
+    transform: scale(1.25);
+  }
+
+  .hero-dot.active {
+    width: 18px;
+    border-radius: 9999px;
+    background: #ffffff;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
   }
 
   .thumbnails-strip {
     display: flex;
-    gap: 0.6rem;
-    padding: 0.75rem 2rem;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.85rem 2rem;
     background: var(--bg-subtle);
     border-bottom: 1px solid var(--border-color);
     overflow-x: auto;
+  }
+
+  .thumbnails-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    white-space: nowrap;
+    display: flex;
     align-items: center;
+    gap: 0.3rem;
+  }
+
+  .thumbnails-scroll {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    overflow-x: auto;
+    padding: 2px 0;
   }
 
   .thumb-btn {
-    background: none;
-    border: 2px solid transparent;
+    background: #ffffff;
+    border: 2px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: 2px;
+    padding: 3px;
     cursor: pointer;
-    width: 56px;
-    height: 56px;
+    width: 84px;
+    height: 84px;
     flex-shrink: 0;
     overflow: hidden;
-    transition: all 0.2s ease;
-    opacity: 0.65;
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 0.75;
+    box-shadow: var(--shadow-sm);
   }
 
   .thumb-btn:hover {
     opacity: 1;
     transform: translateY(-2px);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-md);
   }
 
   .thumb-btn.active-thumb {
     border-color: var(--primary);
     opacity: 1;
-    box-shadow: 0 0 0 2px var(--primary-glow);
-    transform: scale(1.04);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+    transform: scale(1.05);
   }
 
   .thumb-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: calc(var(--radius-md) - 3px);
+    border-radius: calc(var(--radius-md) - 4px);
+    display: block;
+  }
+
+  .thumb-index {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(4px);
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 9999px;
+    pointer-events: none;
   }
 
   .hero-placeholder {
@@ -670,23 +769,24 @@
     position: absolute;
     bottom: 0;
     inset-inline: 0;
-    padding: 2rem 2rem 1.25rem;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0) 100%);
+    padding: 3rem 2rem 1.5rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.35) 65%, rgba(0, 0, 0, 0) 100%);
     color: white;
   }
 
   .hero-badges {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.6rem;
   }
 
   .hero-title {
     font-family: var(--font-serif);
-    font-size: 2rem;
+    font-size: 2.15rem;
     font-weight: 700;
     line-height: 1.2;
     color: #ffffff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   }
 
   .modal-body {
@@ -1095,10 +1195,17 @@
       grid-template-columns: 1fr;
     }
     .modal-hero {
-      height: 200px;
+      height: 260px;
     }
     .hero-title {
-      font-size: 1.4rem;
+      font-size: 1.45rem;
+    }
+    .thumb-btn {
+      width: 70px;
+      height: 70px;
+    }
+    .hero-dots {
+      display: none;
     }
   }
 </style>
