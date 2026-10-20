@@ -1,9 +1,11 @@
+import logging
 import time
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from fastapi import APIRouter, HTTPException, status
 from app.config import get_settings
-from app.database import get_database, db_manager
+from app.database import db_manager
+
+logger = logging.getLogger("recipe_book.health")
 
 router = APIRouter(prefix="/health", tags=["Health & Observability"])
 
@@ -47,14 +49,15 @@ async def readiness_probe() -> Dict[str, Any]:
             },
         }
     except Exception as exc:
+        # Log the driver error server-side; it can include hostnames, so don't return it to callers
+        logger.warning("Readiness check failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
                 "status": "not_ready",
                 "database": "unreachable",
-                "error": str(exc),
             },
-        )
+        ) from exc
 
 
 @router.get("/startup", summary="Startup probe for slow initialization")

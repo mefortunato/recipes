@@ -1,5 +1,6 @@
 import logging
 from typing import Optional
+from fastapi import HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.config import get_settings
 
@@ -51,25 +52,18 @@ async def close_mongo_connection() -> None:
 async def get_database() -> AsyncIOMotorDatabase:
     """Dependency injection helper for FastAPI routes."""
     if db_manager.db is None:
-        raise RuntimeError("Database is not connected. Ensure connect_to_mongo() has been called.")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database service unavailable.")
     return db_manager.db
 
 
 async def init_db_indexes(db: AsyncIOMotorDatabase) -> None:
-    """Ensure performant search indexes exist."""
+    """Ensure query indexes and uniqueness constraints exist."""
     try:
         recipes_collection = db["recipes"]
-        # Index for text search across title, description, cuisine, ingredients, and tags
-        await recipes_collection.create_index(
-            [
-                ("title", "text"),
-                ("description", "text"),
-                ("cuisine", "text"),
-                ("tags", "text"),
-                ("ingredients.name", "text"),
-            ],
-            name="recipe_text_search_index",
-        )
+        # Search uses case-insensitive substring regexes, which a text index can't serve,
+        # so drop the unused one left by earlier versions (it only slowed down writes).
+        if "recipe_text_search_index" in await recipes_collection.index_information():
+            await recipes_collection.drop_index("recipe_text_search_index")
         # Single field query indexes
         await recipes_collection.create_index("cuisine")
         await recipes_collection.create_index("category")
@@ -80,4 +74,10 @@ async def init_db_indexes(db: AsyncIOMotorDatabase) -> None:
         await recipes_collection.create_index("upvoted_by")
         logger.info("Database indexes successfully ensured on 'recipes' collection")
     except Exception as exc:
-        logger.warning("Could not create database indexes: %s", exc)
+        logger.warning("Could not create recipe indexes: %s", exc)
+
+    try:
+        # One account per email, even when two first sign-ins race
+        await db["users"].create_index("email", unique=True)
+    except Exception as exc:
+        logger.warning("Could not create unique users.email index (duplicate emails?): %s", exc)

@@ -1,21 +1,28 @@
 // API Client for FastAPI backend
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
+// Sessions live in the backend's httpOnly cookie, out of reach of page scripts.
+// Older builds also kept the JWT in localStorage; remove any copy left behind.
+try {
+  localStorage.removeItem('recipe_access_token');
+} catch {
+  // Storage unavailable (private mode, blocked site data): nothing to clean up
+}
+
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('recipe_access_token') : null;
   const headers = {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
 
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, { ...options, headers, credentials: 'include' });
     if (response.status === 204) {
       return null;
     }
-    const data = await response.json();
+    const isJson = response.headers.get('content-type')?.includes('application/json');
+    const data = isJson ? await response.json() : null;
     if (!response.ok) {
       const errorMsg = data?.detail?.message || data?.detail || 'An unexpected error occurred';
       throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
@@ -37,14 +44,10 @@ export const api = {
     const payload = typeof credentialOrPayload === 'string'
       ? { credential: credentialOrPayload }
       : credentialOrPayload;
-    const data = await request('/auth/google/verify', {
+    return request('/auth/google/verify', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    if (data?.access_token && typeof localStorage !== 'undefined') {
-      localStorage.setItem('recipe_access_token', data.access_token);
-    }
-    return data;
   },
 
   async getMe() {
@@ -81,13 +84,7 @@ export const api = {
   },
 
   async logout() {
-    try {
-      await request('/auth/logout', { method: 'POST' });
-    } finally {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('recipe_access_token');
-      }
-    }
+    return request('/auth/logout', { method: 'POST' });
   },
 
   // Recipes

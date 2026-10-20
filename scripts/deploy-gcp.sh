@@ -115,7 +115,9 @@ echo "✓ Target GCP Project: ${PROJECT_ID}"
 # --- 5. Resolve URLs and Environment Defaults ---
 MONGODB_URI="${MONGODB_URI:-}"
 MONGODB_DB_NAME="${MONGODB_DB_NAME:-recipe_book}"
-ENVIRONMENT="${ENVIRONMENT:-production}"
+# Always deploy as production: .env usually says ENVIRONMENT=development for local use,
+# and production mode is what enforces the security checks in app/config.py.
+ENVIRONMENT="${DEPLOY_ENVIRONMENT:-production}"
 AUTO_SEED="${AUTO_SEED:-true}"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 LOG_FORMAT="${LOG_FORMAT:-json}"
@@ -152,6 +154,27 @@ if [ -z "$MONGODB_URI" ]; then
   exit 1
 fi
 
+# Auth variables
+JWT_SECRET="${JWT_SECRET:-}"
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
+ALLOWED_EDITOR_EMAILS="${ALLOWED_EDITOR_EMAILS:-}"
+
+if [ ${#JWT_SECRET} -lt 32 ] \
+  || [ "$JWT_SECRET" = "super-secret-recipes-jwt-token-key-2026" ] \
+  || [ "$JWT_SECRET" = "your-random-jwt-secret-replace-in-production" ]; then
+  echo "❌ Error: JWT_SECRET must be set to a random value of at least 32 characters."
+  echo "Generate one with: openssl rand -hex 32"
+  exit 1
+fi
+
+if [ -z "$GOOGLE_CLIENT_ID" ]; then
+  echo "⚠️  Warning: GOOGLE_CLIENT_ID is not set; Google sign-in will be disabled."
+fi
+if [ -z "$ALLOWED_EDITOR_EMAILS" ]; then
+  echo "⚠️  Warning: ALLOWED_EDITOR_EMAILS is empty; there will be no bootstrap administrator."
+fi
+
 echo "✓ Target Region:     ${REGION}"
 echo "✓ Service Name:      ${SERVICE_NAME}"
 if [ -n "$FRONTEND_URL" ]; then
@@ -166,12 +189,6 @@ if [ "${DRY_RUN}" = false ]; then
 else
   echo "[DRY-RUN] gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com --project ${PROJECT_ID}"
 fi
-
-# Auth variables
-JWT_SECRET="${JWT_SECRET:-super-secret-recipes-jwt-token-key-2026}"
-GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
-GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
-ALLOWED_EDITOR_EMAILS="${ALLOWED_EDITOR_EMAILS:-}"
 
 # --- 7. Build and deploy container directly using Google Cloud Build & Cloud Run ---
 echo ""

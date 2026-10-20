@@ -225,7 +225,7 @@ async def test_bootstrap_admin_from_allowed_editor_emails():
         bootstrap_email = "bootstrap_admin@example.com"
 
     # Simulate sign in / creation of the bootstrap user
-    user = await get_or_create_user({
+    user = await get_or_create_user(db_manager.db, {
         "email": bootstrap_email,
         "name": "Bootstrap Privileged Owner",
         "google_id": "google-bootstrap-001",

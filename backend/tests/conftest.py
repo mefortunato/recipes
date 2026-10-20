@@ -1,8 +1,21 @@
+import os
+
+# Pin settings before the app is imported so tests never depend on a developer's .env
+# (environment variables take precedence over .env files in pydantic-settings).
+os.environ.update({
+    "ENVIRONMENT": "test",
+    "JWT_SECRET": "test-only-jwt-secret-0123456789abcdef",
+    "GOOGLE_CLIENT_ID": "test-client-id.apps.googleusercontent.com",
+    "ALLOWED_EDITOR_EMAILS": "bootstrap_admin@example.com",
+    "DEV_LOGIN_ENABLED": "false",
+})
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from mongomock_motor import AsyncMongoMockClient
 from app.main import app
 from app.database import db_manager, init_db_indexes
+from app.dependencies.auth import require_editor_user
 from app.services.recipe_service import RecipeService
 
 
@@ -25,9 +38,6 @@ async def setup_test_db():
 
     db_manager.client = None
     db_manager.db = None
-
-
-from app.dependencies.auth import require_editor_user
 
 
 @pytest.fixture

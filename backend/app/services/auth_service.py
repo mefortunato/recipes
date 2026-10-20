@@ -1,18 +1,21 @@
-import base64
-import json
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
-from bson import ObjectId
-from jose import JWTError, jwt
+import jwt
 import httpx
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.errors import DuplicateKeyError
 
-from app.config import get_settings
-from app.database import db_manager
+from app.config import Settings, get_settings
 
 logger = logging.getLogger("recipe_book.auth")
+
+ROLES = ("admin", "editor", "viewer")
+# Permission flags that older user documents stored alongside 'role'; 'role' is now the only source of truth
+LEGACY_PERMISSION_FIELDS = {"can_edit": "", "is_admin": "", "is_bootstrap": ""}
 
 
 def utc_now() -> datetime:
@@ -22,92 +25,83 @@ def utc_now() -> datetime:
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     settings = get_settings()
     to_encode = data.copy()
-    if expires_delta:
-        expire = utc_now() + expires_delta
-    else:
-        expire = utc_now() + timedelta(minutes=settings.access_token_expire_minutes)
-    to_encode.update({"exp": expire})
+    now = utc_now()
+    expire = now + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
+    to_encode.update({"iat": now, "exp": expire})
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> Optional[dict]:
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-        return payload
-    except JWTError as e:
+        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as e:
         logger.warning("JWT decode failure: %s", e)
         return None
 
 
-def decode_google_jwt(credential: str) -> dict:
-    """Decodes Google Identity Services JWT payload safely without secret."""
-    try:
-        parts = credential.split(".")
-        if len(parts) < 2:
-            return {}
-        payload_b64 = parts[1]
-        remainder = len(payload_b64) % 4
-        if remainder > 0:
-            payload_b64 += "=" * (4 - remainder)
-        decoded_bytes = base64.urlsafe_b64decode(payload_b64)
-        return json.loads(decoded_bytes.decode("utf-8"))
-    except Exception as e:
-        logger.warning("Error decoding Google credential: %s", e)
-        return {}
+def stored_role(user_doc: Dict[str, Any]) -> str:
+    """The role persisted for a user, upgrading documents that still carry legacy permission flags."""
+    role = user_doc.get("role", "viewer")
+    if role not in ROLES:
+        role = "viewer"
+    if role != "admin" and user_doc.get("is_admin"):
+        return "admin"
+    if role == "viewer" and user_doc.get("can_edit"):
+        return "editor"
+    return role
+
+
+def resolve_permissions(user_doc: Dict[str, Any], settings: Optional[Settings] = None) -> Dict[str, Any]:
+    """Fill in a user document's effective role and derived permission flags.
+
+    Bootstrap emails in ALLOWED_EDITOR_EMAILS are always admins; everyone else gets their stored
+    role. A '*' in ALLOWED_EDITOR_EMAILS additionally lets every signed-in user edit recipes.
+    """
+    settings = settings or get_settings()
+    is_bootstrap = settings.is_privileged_email(user_doc.get("email"))
+    role = "admin" if is_bootstrap else stored_role(user_doc)
+
+    user_doc["_id"] = str(user_doc["_id"])
+    user_doc["role"] = role
+    user_doc["is_admin"] = role == "admin"
+    user_doc["can_edit"] = role in ("admin", "editor") or settings.all_users_can_edit
+    user_doc["is_bootstrap"] = is_bootstrap
+    return user_doc
 
 
 async def verify_google_credential(credential: str) -> Optional[Dict[str, Any]]:
-    """Verifies a Google ID token from frontend Google Identity Services button."""
+    """Verifies a Google ID token from frontend Google Identity Services button.
+
+    The token's signature, audience (our client ID), issuer and expiry must all check out;
+    there is deliberately no fallback, since an unverified token can claim any email.
+    """
     settings = get_settings()
+    if not settings.google_client_id:
+        logger.error("GOOGLE_CLIENT_ID is not configured; cannot verify Google credentials.")
+        return None
 
-    # 1. Attempt official google-auth library verification
     try:
-        if settings.google_client_id:
-            idinfo = id_token.verify_oauth2_token(
-                credential,
-                google_requests.Request(),
-                settings.google_client_id,
-            )
-            return {
-                "google_id": idinfo.get("sub"),
-                "email": idinfo.get("email"),
-                "name": idinfo.get("name", "Gourmet Chef"),
-                "picture": idinfo.get("picture"),
-            }
+        idinfo = await asyncio.to_thread(
+            id_token.verify_oauth2_token,
+            credential,
+            google_requests.Request(),
+            settings.google_client_id,
+        )
     except Exception as e:
-        logger.warning("Google library verification failed: %s. Trying public tokeninfo endpoint.", e)
+        logger.warning("Google credential verification failed: %s", e)
+        return None
 
-    # 2. Fallback to Google's public tokeninfo endpoint
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://oauth2.googleapis.com/tokeninfo",
-                params={"id_token": credential},
-                timeout=10.0,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return {
-                    "google_id": data.get("sub"),
-                    "email": data.get("email"),
-                    "name": data.get("name", "Gourmet Chef"),
-                    "picture": data.get("picture"),
-                }
-    except Exception as ex:
-        logger.error("Google tokeninfo fallback failed: %s", ex)
+    if not idinfo.get("email") or not idinfo.get("email_verified"):
+        logger.warning("Rejected Google credential without a verified email")
+        return None
 
-    # 3. Fallback: decode JWT directly without network call (useful in dev/mock environments)
-    decoded = decode_google_jwt(credential)
-    if decoded and decoded.get("email"):
-        return {
-            "google_id": decoded.get("sub") or decoded.get("user_id"),
-            "email": decoded.get("email"),
-            "name": decoded.get("name", "Gourmet Chef"),
-            "picture": decoded.get("picture"),
-        }
-
-    return None
+    return {
+        "google_id": idinfo.get("sub"),
+        "email": idinfo.get("email"),
+        "name": idinfo.get("name", "Gourmet Chef"),
+        "picture": idinfo.get("picture"),
+    }
 
 
 async def exchange_google_code(code: str, redirect_uri: str) -> Optional[Dict[str, Any]]:
@@ -145,6 +139,9 @@ async def exchange_google_code(code: str, redirect_uri: str) -> Optional[Dict[st
                 return None
 
             info = userinfo_resp.json()
+            if not info.get("email") or not info.get("email_verified"):
+                logger.warning("Rejected Google profile without a verified email")
+                return None
             return {
                 "google_id": info.get("sub"),
                 "email": info.get("email"),
@@ -156,36 +153,16 @@ async def exchange_google_code(code: str, redirect_uri: str) -> Optional[Dict[st
         return None
 
 
-async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
-    """Finds existing user by email or creates a new one, keeping bootstrap/database permissions."""
-    settings = get_settings()
-    db = db_manager.db
-    if db is None:
-        raise RuntimeError("Database connection is not initialized")
-
+async def get_or_create_user(db: AsyncIOMotorDatabase, user_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Finds existing user by email or creates a new viewer, returning it with resolved permissions."""
     email = user_info["email"].strip().lower()
     existing = await db.users.find_one({"email": email})
 
-    is_privileged = settings.is_privileged_email(email)
-
     if existing:
-        # If user email is in ALLOWED_EDITOR_EMAILS, they are guaranteed bootstrap admin
-        if is_privileged:
-            role = "admin"
-            can_edit = True
-            is_admin = True
-        else:
-            # Respect database permissions set by an admin!
-            role = existing.get("role", "viewer")
-            can_edit = existing.get("can_edit", (role in ("admin", "editor")))
-            is_admin = (role == "admin") or existing.get("is_admin", False)
-
         update_fields = {
             "last_login": utc_now(),
-            "role": role,
-            "can_edit": can_edit,
-            "is_admin": is_admin,
-            "is_bootstrap": is_privileged,
+            # Persist the role implied by any legacy flags, then drop the flags
+            "role": stored_role(existing),
         }
         if user_info.get("name") and (not existing.get("name") or existing.get("name") == email.split("@")[0]):
             update_fields["name"] = user_info["name"]
@@ -194,48 +171,28 @@ async def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
         if user_info.get("google_id") and not existing.get("google_id"):
             update_fields["google_id"] = user_info["google_id"]
 
-        await db.users.update_one({"_id": existing["_id"]}, {"$set": update_fields})
-        existing["_id"] = str(existing["_id"])
+        await db.users.update_one(
+            {"_id": existing["_id"]},
+            {"$set": update_fields, "$unset": LEGACY_PERMISSION_FIELDS},
+        )
         existing.update(update_fields)
-        return existing
-
-    # Create new user
-    if is_privileged:
-        role = "admin"
-        can_edit = True
-        is_admin = True
-    else:
-        role = user_info.get("role", "viewer")
-        can_edit = user_info.get("can_edit", (role in ("admin", "editor")))
-        is_admin = (role == "admin") or user_info.get("is_admin", False)
+        for field in LEGACY_PERMISSION_FIELDS:
+            existing.pop(field, None)
+        return resolve_permissions(existing)
 
     new_user = {
         "email": email,
         "name": user_info.get("name", email.split("@")[0]),
         "picture": user_info.get("picture", ""),
         "google_id": user_info.get("google_id"),
-        "role": role,
-        "can_edit": can_edit,
-        "is_admin": is_admin,
-        "is_bootstrap": is_privileged,
+        "role": "viewer",
         "created_at": utc_now(),
         "last_login": utc_now(),
     }
-    result = await db.users.insert_one(new_user)
-    new_user["_id"] = str(result.inserted_id)
-    return new_user
-
-
-async def purge_demo_users(db) -> int:
-    """Purges any legacy demo users from the users collection."""
-    if db is None:
-        return 0
-    res = await db.users.delete_many({
-        "$or": [
-            {"email": {"$regex": r"@gourmetvault\.com$", "$options": "i"}},
-            {"google_id": {"$regex": r"^demo-", "$options": "i"}},
-        ]
-    })
-    if res.deleted_count > 0:
-        logger.info("Purged %d legacy demo users from database", res.deleted_count)
-    return res.deleted_count
+    try:
+        result = await db.users.insert_one(new_user)
+    except DuplicateKeyError:
+        # A concurrent first sign-in for the same email created the user first
+        return await get_or_create_user(db, user_info)
+    new_user["_id"] = result.inserted_id
+    return resolve_permissions(new_user)

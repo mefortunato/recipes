@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from typing import Optional, List, Any, Dict
+from datetime import datetime
+from typing import Optional, List, Any
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
@@ -65,4 +65,3 @@ class AuthConfigResponse(BaseModel):
     google_client_id: str
     google_auth_enabled: bool
     dev_login_enabled: bool = False
-    allowed_editor_emails: List[str]

@@ -36,7 +36,8 @@ async def test_auth_config_endpoint():
         assert "google_client_id" in data
         assert "dev_login_enabled" in data
         assert data["dev_login_enabled"] is False
-        assert "allowed_editor_emails" in data
+        # Admin emails must not be exposed to anonymous callers
+        assert "allowed_editor_emails" not in data
 
 
 @pytest.mark.asyncio
@@ -56,29 +57,25 @@ async def test_health_endpoints():
 async def test_google_verify_without_client_secret():
     """Verify Google Identity Services ID token verification does NOT require GOOGLE_CLIENT_SECRET."""
     from unittest.mock import patch
-    import base64
-    import json
 
-    # Create a mock Google Identity Services JWT payload
-    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).decode().rstrip("=")
+    # Claims as returned by google-auth after it has verified the token's signature
     claims = {
         "sub": "google-user-12345",
         "email": "gourmet.chef@example.com",
+        "email_verified": True,
         "name": "Chef Auguste",
         "picture": "https://example.com/avatar.jpg",
-        "aud": "mock-client-id",
+        "aud": "test-client-id.apps.googleusercontent.com",
         "iss": "https://accounts.google.com",
     }
-    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
-    dummy_signature = base64.urlsafe_b64encode(b"dummy-sig").decode().rstrip("=")
-    mock_gis_token = f"{header}.{payload}.{dummy_signature}"
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/v1/auth/google/verify",
-            json={"credential": mock_gis_token},
-        )
+    with patch("app.services.auth_service.id_token.verify_oauth2_token", return_value=claims):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/auth/google/verify",
+                json={"credential": "header.payload.signature"},
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert "access_token" in data
