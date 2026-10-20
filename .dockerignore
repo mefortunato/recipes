@@ -1,0 +1,14 @@
+# Keep host-specific and secret files out of the build context.
+# In particular, host node_modules must not overwrite the image's `npm ci` install.
+.git
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+backend/app/static
+frontend/dist
+docker-compose.override.yml
