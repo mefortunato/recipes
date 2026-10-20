@@ -59,7 +59,7 @@ async def test_google_verify_requires_client_id(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["/..%2F..%2Fpyproject.toml", "/..%2F..%2F..%2Fetc%2Fpasswd"])
-async def test_spa_fallback_does_not_serve_files_outside_static_dir(path):
+async def test_spa_fallback_does_not_serve_files_outside_static_dir(path, spa_static_dir):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get(path)

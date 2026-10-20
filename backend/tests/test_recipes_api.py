@@ -189,7 +189,7 @@ async def test_multiple_images_support(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_static_html_and_spa_fallback(async_client: AsyncClient):
+async def test_static_html_and_spa_fallback(async_client: AsyncClient, spa_static_dir):
     # Test browser GET on root returns HTML
     resp_browser = await async_client.get("/", headers={"accept": "text/html,application/xhtml+xml"})
     assert resp_browser.status_code == 200

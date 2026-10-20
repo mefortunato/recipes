@@ -55,3 +55,10 @@ async def async_client():
         yield client
     app.dependency_overrides.pop(require_editor_user, None)
 
+
+@pytest.fixture
+def spa_static_dir(tmp_path, monkeypatch):
+    """Serve a stub SPA build so tests don't depend on a local `npm run build`."""
+    (tmp_path / "index.html").write_text("<!doctype html><title>Gourmet Vault</title>")
+    monkeypatch.setattr("app.main.STATIC_DIR", tmp_path)
+    return tmp_path
