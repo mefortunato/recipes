@@ -12,9 +12,9 @@ A modern, responsive full-stack recipe book application built with **FastAPI**, 
 - **User-Specific Thumbs Up / Down Voting & Aggregate Rating**: Users can upvote (👍) or downvote (👎) recipes; recipes track total upvotes, downvotes, and net aggregate rating, and can be sorted by aggregate vote rating.
 - **Modern Python with `uv`**: Ultra-fast dependency resolution and virtual environment management via Astral's `uv`.
 - **One-Command Local Dev Environment**: `./scripts/dev.sh` boots local MongoDB container, launches FastAPI with hot reload (`:8000`), and runs Vite dev server (`:5173`) with automated process cleanup on exit.
-- **Self-Contained Multi-Stage Container**: Root [`Dockerfile`](file:///home/mfort/projects/recipes/Dockerfile) packages the pre-built Svelte SPA and FastAPI backend into a single container for local Docker Compose and Google Cloud Run.
-- **Automated Google Cloud Run Deployments**: Automated deploy script ([`./scripts/deploy-gcp.sh`](file:///home/mfort/projects/recipes/scripts/deploy-gcp.sh)) builds and deploys serverless containers with autoscaling.
-- **Google Cloud Free Tier Storage Safeguard**: Automated script ([`./scripts/cleanup-gcp-artifacts.sh`](file:///home/mfort/projects/recipes/scripts/cleanup-gcp-artifacts.sh)) enforces GCS bucket lifecycle policies and prunes older container images to stay within free-tier limits.
+- **Self-Contained Multi-Stage Container**: Root [`Dockerfile`](Dockerfile) packages the pre-built Svelte SPA and FastAPI backend into a single container for local Docker Compose and Google Cloud Run.
+- **Automated Google Cloud Run Deployments**: Automated deploy script ([`./scripts/deploy-gcp.sh`](scripts/deploy-gcp.sh)) builds and deploys serverless containers with autoscaling.
+- **Google Cloud Free Tier Storage Safeguard**: Automated script ([`./scripts/cleanup-gcp-artifacts.sh`](scripts/cleanup-gcp-artifacts.sh)) enforces GCS bucket lifecycle policies and prunes older container images to stay within free-tier limits.
 
 ---
 
@@ -75,7 +75,7 @@ To run the complete application with Docker Compose:
    - **Recipe Book Web App**: [http://localhost:8080](http://localhost:8080)
    - **Interactive API Documentation (Swagger)**: [http://localhost:8080/docs](http://localhost:8080/docs)
    - **Readiness Health Check**: [http://localhost:8080/health/ready](http://localhost:8080/health/ready)
-   - **Optional Mongo Express GUI**: Run with `docker compose --profile tools up` and open [http://localhost:8081](http://localhost:8081).
+   - **Optional Mongo Express GUI**: Run with `docker compose --profile tools up` and open [http://localhost:8081](http://localhost:8081) (basic auth: `MONGO_EXPRESS_USER` / `MONGO_EXPRESS_PASSWORD` from `.env`, default `admin` / `pass`). MongoDB and Mongo Express are bound to `127.0.0.1` only.
 
 ---
 
@@ -166,36 +166,45 @@ Gourmet Vault employs role-based access control (RBAC):
    GOOGLE_CLIENT_SECRET=
    ```
 
-### 2. Configure Initial Administrator (Bootstrap Admin)
-In `.env`, define the initial privileged administrator email:
+### 2. Configure Initial Administrator (Bootstrap Admin) and Session Secret
+In `.env`, define the initial privileged administrator email(s) and a session signing secret:
 ```env
-# Specific administrator/owner email seeded with bootstrap admin privileges:
+# Comma-separated bootstrap administrator emails (empty = no bootstrap admin)
 ALLOWED_EDITOR_EMAILS=chef.owner@example.com
+# Optional: add '*' to let every signed-in user edit recipes ('*' never grants admin)
+# ALLOWED_EDITOR_EMAILS=chef.owner@example.com,*
+
+# Random secret of at least 32 characters (required in production)
+JWT_SECRET=<output of: openssl rand -hex 32>
 ```
-When this user signs in via Google OAuth, they are automatically granted **Admin** permissions (`is_admin=True`, `can_edit=True`, `is_bootstrap=True`).
+Bootstrap emails are always treated as **Admin** while they are listed in `ALLOWED_EDITOR_EMAILS`; removing an email from the list removes that override. Every other user's permissions come from their stored `role` (`viewer`, `editor`, or `admin`), which admins manage in the Admin Panel.
+
+If `JWT_SECRET` is missing or weak outside production, the server logs a warning and uses a random per-process secret (sessions reset on restart). With `ENVIRONMENT=production` the server refuses to start with a weak secret, a `*` CORS origin, or `DEV_LOGIN_ENABLED=true`.
 
 ### 3. User Roles & Admin Panel
 Privileged administrators can access the in-app **🛡️ Admin Panel** to manage team permissions securely:
 - **Viewer**: Read-only access to browse, search, and scale recipes.
 - **Editor**: Can create, update, and manage recipes.
 - **Admin**: Full recipe management plus user role management and team pre-provisioning.
-- **Security Hardening**: Demo logins and bypass credentials have been completely removed. All authentication is strictly verified via Google OAuth 2.0.
+- **Security Hardening**: Google ID tokens are only accepted after full signature, audience, issuer and expiry verification (no fallbacks). Sessions use an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production), and the redirect-based OAuth flow is protected with a `state` parameter.
 
 ---
 
 ## 🧪 Testing
 
-The backend includes comprehensive async test coverage testing all endpoints, role enforcement, health checks, CRUD operations, ingredient scaling, and static SPA serving:
+The backend tests run against an in-memory MongoDB mock and cover the API, role enforcement, voting, OAuth, and security regressions:
 ```bash
 cd backend
-uv run pytest tests/
+uv run ruff check .
+uv run pytest
 ```
-Output:
+Frontend checks:
+```bash
+cd frontend
+npm run check   # svelte-check (errors only)
+npm run build
 ```
-tests/test_auth_and_permissions.py ......                                                                    [ 40%]
-tests/test_recipes_api.py .........                                                                         [100%]
-=============================================== 15 passed in 0.18s ===============================================
-```
+The same checks, plus a production Docker build, run in GitHub Actions on every push and pull request (`.github/workflows/ci.yml`).
 
 ---
 
@@ -245,7 +254,8 @@ This will automatically:
 - Enable Cloud Run, Cloud Build, and Artifact Registry APIs
 - Build the container using Cloud Build (no local Docker daemon required)
 - Deploy to Cloud Run with auto-scaling (scales to 0 when idle to eliminate idle costs)
-- Set up production environment variables (`MONGODB_URI`, `MONGODB_DB_NAME`, `ENVIRONMENT=production`, `LOG_FORMAT=json`)
+- Set up production environment variables (`MONGODB_URI`, `MONGODB_DB_NAME`, `ENVIRONMENT=production`, `LOG_FORMAT=json`). `ENVIRONMENT` is always `production` for deploys, regardless of `.env`; override with `DEPLOY_ENVIRONMENT` if you really need to.
+- Refuse to deploy unless `JWT_SECRET` is a random value of at least 32 characters
 - Retrieve and configure your live HTTPS URL (e.g. `https://recipe-book-xyz-uc.a.run.app`)
 - Automatically execute `./scripts/cleanup-gcp-artifacts.sh --prune-now` to purge older build artifacts and protect your Google Cloud Free Tier quotas
 
@@ -297,46 +307,38 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 ```
 recipes/
 ├── .env.example                       # Environment configuration template
-├── .gitignore                         # Git ignore patterns for Python, Node, Vite & secrets
-├── Dockerfile                         # Unified multi-stage build (Node builder + uv Python runner)
-├── docker-compose.yml                 # Unified app (port 8080) + MongoDB (port 27017)
-├── docker-compose.override.yml.example # Example for hot-reload container mounts
+├── .dockerignore                      # Keeps secrets & host node_modules out of image builds
+├── .github/workflows/ci.yml           # Lint, tests, frontend check/build, Docker build
+├── Dockerfile                         # Unified multi-stage build (Node builder + uv Python runner, non-root)
+├── docker-compose.yml                 # Unified app (port 8080) + MongoDB (localhost:27017)
+├── docker-compose.override.yml.example # Example for backend hot-reload container mounts
+├── dev.sh -> scripts/dev.sh           # Symlink shortcut
 ├── README.md                          # Documentation
-├── scripts/
-│   ├── dev.sh                         # One-command local development environment
-│   ├── build.sh                       # Frontend build + backend pytest test runner
-│   ├── deploy-gcp.sh                  # Automated Google Cloud Run build & deploy
-│   └── cleanup-gcp-artifacts.sh       # Cloud Storage lifecycle & Artifact Registry cleaner
 ├── backend/
-│   ├── pyproject.toml                 # Python package configuration (uv managed)
+│   ├── pyproject.toml                 # Python package configuration (uv managed, ruff config)
 │   ├── uv.lock                        # Exact reproducible dependency lockfile
-│   ├── Dockerfile                     # Standalone backend container
-│   ├── .dockerignore
 │   ├── app/
 │   │   ├── main.py                    # FastAPI app, SPA static asset serving & CORS
-│   │   ├── config.py                  # Pydantic BaseSettings 12-factor config
-│   │   ├── database.py                # Async Motor client, pool & text indexes
+│   │   ├── config.py                  # Pydantic BaseSettings config & production safety checks
+│   │   ├── database.py                # Async Motor client, pool & indexes
 │   │   ├── seed_data.py               # Curated initial recipes
-│   │   ├── models/                    # Pydantic models (Recipe, Ingredient, Scale)
-│   │   ├── repositories/              # Database queries, filtering & pagination
-│   │   ├── services/                  # Recipe scaling & business logic
-│   │   ├── routers/                   # REST API & health probes
+│   │   ├── dependencies/              # Auth dependencies (current user, editor/admin guards)
+│   │   ├── models/                    # Pydantic models (Recipe, Ingredient, User)
+│   │   ├── repositories/              # Database queries, filtering, pagination & voting
+│   │   ├── services/                  # Auth/permissions, recipe scaling & business logic
+│   │   ├── routers/                   # REST API (recipes, auth, admin) & health probes
 │   │   └── static/                    # Built Svelte SPA static assets (generated by build)
-│   └── tests/
-│       ├── conftest.py                # In-memory mock MongoDB test fixtures
-│       └── test_recipes_api.py        # Pytest API test suite & SPA fallback tests
+│   └── tests/                         # Pytest suite on an in-memory MongoDB mock
 ├── frontend/
 │   ├── package.json                   # Svelte & Vite package definitions
 │   ├── vite.config.js                 # Vite config (builds to backend/app/static)
 │   ├── svelte.config.js               # Svelte preprocessor configuration
-│   ├── nginx.conf                     # Optional standalone Nginx reverse-proxy & SPA config
-│   ├── Dockerfile                     # Optional standalone frontend container
-│   ├── .dockerignore
 │   ├── index.html                     # HTML root
 │   └── src/                           # Svelte components & stores
 └── scripts/
     ├── dev.sh                         # Unified local dev environment with hot-reload
     ├── build.sh                       # Single-container production build & test runner
+    ├── test-docker.sh                 # Local production-container smoke test
     ├── deploy-gcp.sh                  # Automated Google Cloud Run build & deployment
     └── cleanup-gcp-artifacts.sh       # GCP Cloud Storage & Artifact Registry pruner
 ```

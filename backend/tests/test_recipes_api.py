@@ -72,7 +72,6 @@ async def test_create_and_get_recipe(async_client: AsyncClient):
             "https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=1200&q=80",
         ],
         "image_url": "https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?auto=format&fit=crop&w=1200&q=80",
-        "is_favorite": True,
     }
 
     create_resp = await async_client.post("/api/v1/recipes", json=new_recipe)
@@ -111,7 +110,7 @@ async def test_scale_recipe(async_client: AsyncClient):
     assert scaled["scale_multiplier"] == 2.0
 
     # Ensure ingredient amounts doubled
-    for orig_ing, scaled_ing in zip(recipe["ingredients"], scaled["ingredients"]):
+    for orig_ing, scaled_ing in zip(recipe["ingredients"], scaled["ingredients"], strict=True):
         assert scaled_ing["scaled_amount"] == pytest.approx(orig_ing["amount"] * 2.0, rel=1e-2)
 
 
@@ -124,7 +123,7 @@ async def test_update_and_delete_recipe(async_client: AsyncClient):
     # Partial update
     update_resp = await async_client.put(
         f"/api/v1/recipes/{recipe_id}",
-        json={"title": "Updated Recipe Title", "is_favorite": True},
+        json={"title": "Updated Recipe Title"},
     )
     assert update_resp.status_code == 200
     assert update_resp.json()["title"] == "Updated Recipe Title"
@@ -190,7 +189,7 @@ async def test_multiple_images_support(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_static_html_and_spa_fallback(async_client: AsyncClient):
+async def test_static_html_and_spa_fallback(async_client: AsyncClient, spa_static_dir):
     # Test browser GET on root returns HTML
     resp_browser = await async_client.get("/", headers={"accept": "text/html,application/xhtml+xml"})
     assert resp_browser.status_code == 200

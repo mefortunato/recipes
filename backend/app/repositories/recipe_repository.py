@@ -93,16 +93,18 @@ class RecipeRepository:
         current_user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         filters: Dict[str, Any] = {}
+        # Clauses that need their own $or are ANDed together so they can't overwrite each other
+        and_clauses: List[Dict[str, Any]] = []
 
         if search:
             escaped = re.escape(search)
-            filters["$or"] = [
+            and_clauses.append({"$or": [
                 {"title": {"$regex": escaped, "$options": "i"}},
                 {"description": {"$regex": escaped, "$options": "i"}},
                 {"cuisine": {"$regex": escaped, "$options": "i"}},
                 {"ingredients.name": {"$regex": escaped, "$options": "i"}},
                 {"tags": {"$regex": escaped, "$options": "i"}},
-            ]
+            ]})
 
         if category and category.lower() != "all":
             filters["category"] = {"$regex": f"^{re.escape(category)}$", "$options": "i"}
@@ -133,7 +135,7 @@ class RecipeRepository:
             if current_user_id:
                 uid_str = str(current_user_id)
                 if is_favorite:
-                    filters["$or"] = [{"is_favorite": True}, {"upvoted_by": uid_str}]
+                    and_clauses.append({"$or": [{"is_favorite": True}, {"upvoted_by": uid_str}]})
                 else:
                     filters["is_favorite"] = False
             else:
@@ -147,6 +149,8 @@ class RecipeRepository:
                 ]
             }
 
+        if and_clauses:
+            filters["$and"] = and_clauses
         return filters
 
     async def list_recipes(
@@ -220,10 +224,10 @@ class RecipeRepository:
         doc = recipe_in.model_dump()
         doc["created_at"] = now
         doc["updated_at"] = now
-        doc["upvoted_by"] = doc.get("upvoted_by") or []
-        doc["downvoted_by"] = doc.get("downvoted_by") or []
-        doc["upvotes_count"] = doc.get("upvotes_count", len(doc["upvoted_by"]))
-        doc["downvotes_count"] = doc.get("downvotes_count", len(doc["downvoted_by"]))
+        doc["upvoted_by"] = []
+        doc["downvoted_by"] = []
+        doc.setdefault("upvotes_count", 0)
+        doc.setdefault("downvotes_count", 0)
         doc["aggregate_rating"] = doc["upvotes_count"] - doc["downvotes_count"]
 
         result = await self.collection.insert_one(doc)
@@ -261,6 +265,9 @@ class RecipeRepository:
     ) -> Optional[RecipeResponse]:
         """User vote: 1 for upvote, -1 for downvote, 0 for clear.
         If toggle is True and user already voted the same way, the vote is cleared.
+
+        Each change is a single atomic update conditioned on the user's current membership in
+        upvoted_by/downvoted_by, so concurrent votes can't lose updates or double-count.
         """
         try:
             obj_id = ObjectId(recipe_id)
@@ -272,84 +279,62 @@ class RecipeRepository:
             return None
 
         uid_str = str(user_id)
-        upvoted_by = [str(u) for u in doc.get("upvoted_by", [])]
-        downvoted_by = [str(u) for u in doc.get("downvoted_by", [])]
+        await self._ensure_vote_counters(doc)
 
-        orig_up_count = doc.get("upvotes_count")
-        if orig_up_count is None:
-            orig_up_count = len(upvoted_by)
+        current_vote = 0
+        if uid_str in [str(u) for u in doc.get("upvoted_by", [])]:
+            current_vote = 1
+        elif uid_str in [str(u) for u in doc.get("downvoted_by", [])]:
+            current_vote = -1
 
-        orig_down_count = doc.get("downvotes_count")
-        if orig_down_count is None:
-            orig_down_count = len(downvoted_by)
+        if vote_val == 0 or (toggle and vote_val == current_vote):
+            await self._remove_vote(obj_id, uid_str, 1)
+            await self._remove_vote(obj_id, uid_str, -1)
+        else:
+            await self._remove_vote(obj_id, uid_str, -vote_val)
+            await self._add_vote(obj_id, uid_str, vote_val)
 
-        current_vote = 1 if uid_str in upvoted_by else (-1 if uid_str in downvoted_by else 0)
-
-        up_delta = 0
-        down_delta = 0
-
-        if vote_val == 1:
-            if current_vote == 1 and toggle:
-                # Toggle off upvote
-                upvoted_by = [u for u in upvoted_by if u != uid_str]
-                up_delta -= 1
-            elif current_vote == 1:
-                # Already upvoted, no change
-                pass
-            else:
-                if uid_str in downvoted_by:
-                    downvoted_by = [u for u in downvoted_by if u != uid_str]
-                    down_delta -= 1
-                if uid_str not in upvoted_by:
-                    upvoted_by.append(uid_str)
-                    up_delta += 1
-        elif vote_val == -1:
-            if current_vote == -1 and toggle:
-                # Toggle off downvote
-                downvoted_by = [u for u in downvoted_by if u != uid_str]
-                down_delta -= 1
-            elif current_vote == -1:
-                # Already downvoted, no change
-                pass
-            else:
-                if uid_str in upvoted_by:
-                    upvoted_by = [u for u in upvoted_by if u != uid_str]
-                    up_delta -= 1
-                if uid_str not in downvoted_by:
-                    downvoted_by.append(uid_str)
-                    down_delta += 1
-        elif vote_val == 0:
-            if uid_str in upvoted_by:
-                upvoted_by = [u for u in upvoted_by if u != uid_str]
-                up_delta -= 1
-            if uid_str in downvoted_by:
-                downvoted_by = [u for u in downvoted_by if u != uid_str]
-                down_delta -= 1
-
-        upvotes_count = max(0, orig_up_count + up_delta)
-        downvotes_count = max(0, orig_down_count + down_delta)
-        upvotes_count = max(upvotes_count, len(upvoted_by))
-        downvotes_count = max(downvotes_count, len(downvoted_by))
-        aggregate_rating = upvotes_count - downvotes_count
-
-        update_fields = {
-            "upvoted_by": upvoted_by,
-            "downvoted_by": downvoted_by,
-            "upvotes_count": upvotes_count,
-            "downvotes_count": downvotes_count,
-            "aggregate_rating": aggregate_rating,
-            "updated_at": datetime.now(timezone.utc),
-        }
-
-        updated_doc = await self.collection.find_one_and_update(
-            {"_id": obj_id},
-            {"$set": update_fields},
-            return_document=True,
-        )
+        updated_doc = await self.collection.find_one({"_id": obj_id})
         if not updated_doc:
             return None
-
         return doc_to_response(updated_doc, current_user_id=uid_str)
+
+    @staticmethod
+    def _vote_fields(vote_val: int) -> Tuple[str, str]:
+        return ("upvoted_by", "upvotes_count") if vote_val == 1 else ("downvoted_by", "downvotes_count")
+
+    async def _add_vote(self, obj_id: ObjectId, uid_str: str, vote_val: int) -> None:
+        voters, counter = self._vote_fields(vote_val)
+        await self.collection.update_one(
+            {"_id": obj_id, voters: {"$ne": uid_str}},
+            {
+                "$push": {voters: uid_str},
+                "$inc": {counter: 1, "aggregate_rating": vote_val},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+
+    async def _remove_vote(self, obj_id: ObjectId, uid_str: str, vote_val: int) -> None:
+        voters, counter = self._vote_fields(vote_val)
+        await self.collection.update_one(
+            {"_id": obj_id, voters: uid_str},
+            {
+                "$pull": {voters: uid_str},
+                "$inc": {counter: -1, "aggregate_rating": -vote_val},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            },
+        )
+
+    async def _ensure_vote_counters(self, doc: Dict[str, Any]) -> None:
+        """Initialize counters on legacy documents so $inc starts from the right baseline."""
+        if all(field in doc for field in ("upvotes_count", "downvotes_count", "aggregate_rating")):
+            return
+        up = doc.get("upvotes_count", len(doc.get("upvoted_by", [])))
+        down = doc.get("downvotes_count", len(doc.get("downvoted_by", [])))
+        await self.collection.update_one(
+            {"_id": doc["_id"], "aggregate_rating": {"$exists": False}},
+            {"$set": {"upvotes_count": up, "downvotes_count": down, "aggregate_rating": up - down}},
+        )
 
     async def delete(self, recipe_id: str) -> bool:
         try:

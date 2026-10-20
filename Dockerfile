@@ -42,6 +42,11 @@ COPY --from=frontend-builder /build/backend/app/static ./app/static
 # Install project into virtualenv
 RUN uv sync --frozen --no-dev
 
+# Run as an unprivileged user
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --no-create-home appuser
+USER appuser
+
 # Activate virtualenv
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PORT=8000

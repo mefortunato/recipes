@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import connect_to_mongo, close_mongo_connection, db_manager
@@ -33,14 +33,6 @@ async def lifespan(app: FastAPI):
     """FastAPI Lifespan: Manage database connection and initial boot tasks."""
     logger.info("Starting up %s v%s in %s mode", settings.app_name, settings.app_version, settings.environment)
     await connect_to_mongo()
-
-    # Automatically purge legacy demo users to prevent security vulnerabilities
-    if db_manager.db is not None:
-        try:
-            from app.services.auth_service import purge_demo_users
-            await purge_demo_users(db_manager.db)
-        except Exception as exc:
-            logger.warning("Could not purge demo users on startup: %s", exc)
 
     # Auto-seed database if enabled and database is available
     if settings.auto_seed and db_manager.db is not None:
@@ -92,16 +84,9 @@ async def add_process_time_header(request: Request, call_next):
 # Include Routers
 # Mount health checks at root for Cloud Run conventions
 app.include_router(health_router)
-# Mount recipes API under /api/v1
-app.include_router(recipes_router, prefix=settings.api_prefix)
-# Also include health under /api/v1 for unified API clients
-app.include_router(health_router, prefix=settings.api_prefix)
-# Mount authentication & permissions API under /api/v1 and /api
-app.include_router(auth_router, prefix=settings.api_prefix)
-app.include_router(auth_router, prefix="/api")
-# Mount admin panel API under /api/v1 and /api
-app.include_router(admin_router, prefix=settings.api_prefix)
-app.include_router(admin_router, prefix="/api")
+# Mount the versioned API (recipes, health, auth, admin) under /api/v1
+for api_router in (recipes_router, health_router, auth_router, admin_router):
+    app.include_router(api_router, prefix=settings.api_prefix)
 
 
 # Static file serving & Single Page Application (SPA) fallback
@@ -140,8 +125,9 @@ async def serve_spa(full_path: str):
         return Response(status_code=404, content='{"detail":"Not Found"}', media_type="application/json")
 
     # Check if a specific static file was requested (e.g. favicon.svg, robots.txt)
-    requested_file = STATIC_DIR / full_path
-    if full_path and requested_file.is_file():
+    # Resolve and confine to STATIC_DIR so encoded '../' segments can't escape it
+    requested_file = (STATIC_DIR / full_path).resolve()
+    if full_path and requested_file.is_relative_to(STATIC_DIR.resolve()) and requested_file.is_file():
         return FileResponse(requested_file)
 
     # Otherwise serve index.html for Svelte client-side routing
