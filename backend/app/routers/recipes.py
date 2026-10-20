@@ -10,7 +10,6 @@ from app.models.recipe import (
     RecipeUpdate,
     ScaledRecipeResponse,
     VoteRequest,
-    VoteResponse,
 )
 from app.services.recipe_service import RecipeService
 
@@ -38,6 +37,11 @@ async def list_recipes(
     service: RecipeService = Depends(get_service),
     current_user: Optional[Dict[str, Any]] = Depends(get_optional_user),
 ):
+    if sort_order not in (1, -1):
+        raise HTTPException(
+            status_code=422,
+            detail="sort_order must be 1 (ascending) or -1 (descending).",
+        )
     current_user_id = str(current_user["_id"]) if current_user else None
     recipes, total, total_pages = await service.list_recipes(
         page=page,

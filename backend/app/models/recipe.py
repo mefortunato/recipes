@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional, Literal, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -35,10 +35,6 @@ class RecipeBase(BaseModel):
     instructions: List[InstructionStep] = Field(default_factory=list, description="Step-by-step cooking directions")
     images: List[str] = Field(default_factory=list, description="List of image URLs for the recipe")
     image_url: Optional[str] = Field(default=None, description="Primary/cover image URL")
-    upvotes_count: int = Field(default=0, ge=0, description="Total number of users who upvoted")
-    downvotes_count: int = Field(default=0, ge=0, description="Total number of users who downvoted")
-    aggregate_rating: int = Field(default=0, description="Aggregate vote rating (upvotes - downvotes)")
-    is_favorite: Optional[bool] = Field(default=False, description="Legacy bookmarked favorite")
     notes: Optional[str] = Field(default=None, description="Chef's notes, pairings, or personal tweaks")
 
     @field_validator("tags", mode="before")
@@ -70,6 +66,12 @@ class RecipeCreate(RecipeBase):
     pass
 
 
+class SeedRecipe(RecipeCreate):
+    """Sample recipe with baseline vote counts. Used for seed data only, never accepted from clients."""
+    upvotes_count: int = Field(default=0, ge=0)
+    downvotes_count: int = Field(default=0, ge=0)
+
+
 class RecipeUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=2, max_length=150)
     description: Optional[str] = Field(default=None, max_length=1000)
@@ -84,7 +86,6 @@ class RecipeUpdate(BaseModel):
     instructions: Optional[List[InstructionStep]] = None
     images: Optional[List[str]] = None
     image_url: Optional[str] = None
-    is_favorite: Optional[bool] = None
     notes: Optional[str] = None
 
     @field_validator("tags", mode="before")
@@ -124,6 +125,10 @@ class RecipeResponse(RecipeBase):
     total_time_minutes: int = Field(..., description="Total duration (prep + cook)")
     created_at: datetime = Field(..., description="Creation timestamp UTC")
     updated_at: datetime = Field(..., description="Last update timestamp UTC")
+    upvotes_count: int = Field(default=0, ge=0, description="Total number of users who upvoted")
+    downvotes_count: int = Field(default=0, ge=0, description="Total number of users who downvoted")
+    aggregate_rating: int = Field(default=0, description="Aggregate vote rating (upvotes - downvotes)")
+    is_favorite: bool = Field(default=False, description="True if the current user upvoted the recipe")
     user_vote: Optional[int] = Field(default=None, description="Current user vote (1 for upvote, -1 for downvote, None/0 for none)")
 
 
@@ -165,13 +170,4 @@ class VoteRequest(BaseModel):
                 return v
             raise ValueError("Vote integer must be 1, -1, or 0.")
         raise ValueError("Vote must be an integer (1, -1, 0) or string ('up', 'down', 'clear').")
-
-
-class VoteResponse(BaseModel):
-    id: str
-    upvotes_count: int
-    downvotes_count: int
-    aggregate_rating: int
-    user_vote: Optional[int]
-    message: str
 

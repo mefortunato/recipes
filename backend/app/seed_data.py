@@ -1,7 +1,7 @@
-from app.models.recipe import RecipeCreate, Ingredient, InstructionStep
+from app.models.recipe import SeedRecipe, Ingredient, InstructionStep
 
 SAMPLE_RECIPES = [
-    RecipeCreate(
+    SeedRecipe(
         title="Artisan Margherita Pizza",
         description="Classic Neapolitan-style pizza with a crisp, blistered crust, fragrant San Marzano tomato sauce, fresh mozzarella, and aromatic basil leaves.",
         prep_time_minutes=25,
@@ -35,10 +35,9 @@ SAMPLE_RECIPES = [
         image_url="https://images.unsplash.com/photo-1604382355076-af4b0eb60143?auto=format&fit=crop&w=1200&q=80",
         upvotes_count=18,
         downvotes_count=1,
-        aggregate_rating=17,
         notes="Drain fresh mozzarella on paper towels for 15 minutes beforehand to prevent excess moisture on the pizza.",
     ),
-    RecipeCreate(
+    SeedRecipe(
         title="Creamy Tuscan Garlic Chicken",
         description="Golden pan-seared chicken cutlets simmered in a luscious garlic, sun-dried tomato, and spinach cream sauce. Restaurant-quality dinner in under 30 minutes.",
         prep_time_minutes=10,
@@ -77,10 +76,9 @@ SAMPLE_RECIPES = [
         image_url="https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=1200&q=80",
         upvotes_count=24,
         downvotes_count=2,
-        aggregate_rating=22,
         notes="Delicious served over cauliflower mash for low-carb, or alongside tagliatelle pasta and crusty sourdough bread.",
     ),
-    RecipeCreate(
+    SeedRecipe(
         title="Authentic Mexican Beef Barbacoa Tacos",
         description="Slow-braised beef chuck roast marinated in chipotle chiles, lime, apple cider vinegar, and Mexican spices until meltingly tender and shreddable.",
         prep_time_minutes=20,
@@ -120,10 +118,9 @@ SAMPLE_RECIPES = [
         image_url="https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?auto=format&fit=crop&w=1200&q=80",
         upvotes_count=35,
         downvotes_count=3,
-        aggregate_rating=32,
         notes="Barbacoa tastes even more extraordinary the next day once the flavors infuse overnight.",
     ),
-    RecipeCreate(
+    SeedRecipe(
         title="Thai Coconut Red Curry with Crispy Tofu",
         description="Rich, aromatic coconut red curry brimming with colorful bell peppers, tender bamboo shoots, and golden pan-crisped tofu cubes.",
         prep_time_minutes=15,
@@ -164,10 +161,9 @@ SAMPLE_RECIPES = [
         image_url="https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?auto=format&fit=crop&w=1200&q=80",
         upvotes_count=42,
         downvotes_count=1,
-        aggregate_rating=41,
         notes="Add a splash of lime juice at the very end to brighten the rich coconut broth.",
     ),
-    RecipeCreate(
+    SeedRecipe(
         title="Mediterranean Quinoa Salad with Lemon Herb Dressing",
         description="Vibrant, refreshing grain salad packed with crunchy cucumbers, sweet cherry tomatoes, kalamata olives, creamy feta, and fresh herbs.",
         prep_time_minutes=15,
@@ -207,10 +203,9 @@ SAMPLE_RECIPES = [
         image_url="https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=1200&q=80",
         upvotes_count=9,
         downvotes_count=2,
-        aggregate_rating=7,
         notes="Keeps exceptionally well in the refrigerator for up to 4 days, making it ideal for weekday lunches.",
     ),
-    RecipeCreate(
+    SeedRecipe(
         title="Warm Molten Chocolate Lava Cakes",
         description="Decadent individual dark chocolate cakes with delicate cake edges and a warm, velvety liquid chocolate center that cascades when cut.",
         prep_time_minutes=15,
@@ -248,7 +243,6 @@ SAMPLE_RECIPES = [
         image_url="https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=1200&q=80",
         upvotes_count=50,
         downvotes_count=2,
-        aggregate_rating=48,
         notes="You can prep the ramekins and refrigerate them hours in advance; simply add 2 minutes to the baking time.",
     ),
 ]
