@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import connect_to_mongo, close_mongo_connection, db_manager
-from app.routers import health_router, recipes_router, auth_router, admin_router
+from app.routers import health_router, recipes_router, auth_router, admin_router, images_router
 from app.services.recipe_service import RecipeService
 
 settings = get_settings()
@@ -167,8 +167,8 @@ async def security_middleware(request: Request, call_next):
 # Include Routers
 # Mount health checks at root for Cloud Run conventions
 app.include_router(health_router)
-# Mount the versioned API (recipes, health, auth, admin) under /api/v1
-for api_router in (recipes_router, health_router, auth_router, admin_router):
+# Mount the versioned API (recipes, health, auth, admin, images) under /api/v1
+for api_router in (recipes_router, health_router, auth_router, admin_router, images_router):
     app.include_router(api_router, prefix=settings.api_prefix)
 
 

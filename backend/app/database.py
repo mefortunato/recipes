@@ -83,6 +83,18 @@ async def init_db_indexes(db: AsyncIOMotorDatabase) -> None:
         logger.warning("Could not create revoked_tokens TTL index: %s", exc)
 
     try:
+        # Uploads that never made it into a saved recipe (abandoned forms) expire on their own;
+        # saving a recipe flips `attached`, which takes the photo out of this partial TTL index.
+        await db["images"].create_index(
+            "created_at",
+            name="unattached_images_ttl",
+            expireAfterSeconds=get_settings().image_orphan_ttl_seconds,
+            partialFilterExpression={"attached": False},
+        )
+    except Exception as exc:
+        logger.warning("Could not create images TTL index: %s", exc)
+
+    try:
         # One account per email, even when two first sign-ins race
         await db["users"].create_index("email", unique=True)
     except Exception as exc:

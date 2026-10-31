@@ -68,6 +68,13 @@ class Settings(BaseSettings):
         description="Comma-separated bootstrap admin emails. Add '*' to let all signed-in users edit recipes.",
     )
 
+    # Uploaded recipe photos are re-encoded and scaled down before they are stored in MongoDB
+    image_upload_max_bytes: int = Field(default=15 * 1024 * 1024, ge=1024, description="Largest accepted upload, before processing")
+    image_max_dimension: int = Field(default=1600, ge=200, le=8000, description="Longest edge (px) of a stored image")
+    image_max_stored_bytes: int = Field(default=600 * 1024, ge=50 * 1024, description="Size budget for a stored, processed image")
+    image_max_source_pixels: int = Field(default=60_000_000, ge=1_000_000, description="Reject decompression bombs above this many pixels")
+    image_orphan_ttl_seconds: int = Field(default=24 * 60 * 60, ge=60, description="Uploads never attached to a recipe are purged after this long")
+
     # Auto-seed sample recipes if collection is empty
     auto_seed: bool = Field(default=True, description="Seed initial recipes on startup if DB is empty")
 

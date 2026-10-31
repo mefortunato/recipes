@@ -11,6 +11,10 @@
   import { api } from '../api';
 
   let isSubmitting = false;
+  let uploadingCount = 0;
+  let fileInput;
+
+  const MAX_IMAGES = 10;
 
   // Form State
   let title = '';
@@ -97,6 +101,48 @@
       return;
     }
     images = images.filter((_, i) => i !== index);
+  }
+
+  function filledImages() {
+    return images.filter((url) => typeof url === 'string' && url.trim());
+  }
+
+  async function handleFilesSelected(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    const room = MAX_IMAGES - filledImages().length - uploadingCount;
+    if (room <= 0) {
+      showToast(`A recipe can have at most ${MAX_IMAGES} photos`, 'error');
+      return;
+    }
+    if (files.length > room) {
+      showToast(`Only the first ${room} photo(s) will be added (max ${MAX_IMAGES})`, 'info');
+    }
+
+    await Promise.all(files.slice(0, room).map(async (file) => {
+      if (!file.type.startsWith('image/')) {
+        showToast(`${file.name} is not an image`, 'error');
+        return;
+      }
+      uploadingCount += 1;
+      try {
+        const uploaded = await api.uploadImage(file);
+        // Fill an empty URL row if there is one, otherwise add a new row
+        const emptyIdx = images.findIndex((url) => !url || !url.trim());
+        if (emptyIdx >= 0) {
+          images[emptyIdx] = uploaded.url;
+          images = images;
+        } else {
+          images = [...images, uploaded.url];
+        }
+      } catch (err) {
+        showToast(`Could not upload ${file.name}: ${err.message}`, 'error');
+      } finally {
+        uploadingCount -= 1;
+      }
+    }));
   }
 
   function makeCoverImage(index) {
@@ -187,6 +233,11 @@
       image_url: validImages.length > 0 ? validImages[0] : null,
       notes: notes.trim() || null,
     };
+
+    if (uploadingCount > 0) {
+      showToast('Please wait for photo uploads to finish', 'error');
+      return;
+    }
 
     isSubmitting = true;
     try {
@@ -302,11 +353,29 @@
           <div class="section-title-row">
             <div>
               <h4 class="section-heading">Recipe Photos</h4>
-              <p class="section-subtext">Add image URLs. The first image serves as the primary cover.</p>
+              <p class="section-subtext">Upload photos or add image URLs. The first image serves as the primary cover.</p>
             </div>
-            <button type="button" class="btn btn-outline-primary btn-sm" on:click={addImage}>
-              + Add Image URL
-            </button>
+            <div class="photo-buttons">
+              <input
+                bind:this={fileInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                hidden
+                on:change={handleFilesSelected}
+              />
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                on:click={() => fileInput.click()}
+                disabled={uploadingCount > 0}
+              >
+                {uploadingCount > 0 ? `Uploading ${uploadingCount}…` : '⬆ Upload Photo'}
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" on:click={addImage}>
+                + Add Image URL
+              </button>
+            </div>
           </div>
 
           <div class="dynamic-rows">
@@ -321,12 +390,16 @@
                 </div>
 
                 <div class="image-input-box">
-                  <input
-                    type="url"
-                    class="form-input"
-                    placeholder="https://images.unsplash.com/photo-..."
-                    bind:value={images[idx]}
-                  />
+                  {#if imgUrl && imgUrl.startsWith('/')}
+                    <span class="uploaded-label" title={imgUrl}>Uploaded photo</span>
+                  {:else}
+                    <input
+                      type="url"
+                      class="form-input"
+                      placeholder="https://images.unsplash.com/photo-..."
+                      bind:value={images[idx]}
+                    />
+                  {/if}
                   {#if imgUrl && imgUrl.trim()}
                     <img
                       src={imgUrl}
@@ -474,7 +547,7 @@
           <button type="button" class="btn btn-secondary" on:click={closeModal} disabled={isSubmitting}>
             Cancel
           </button>
-          <button type="submit" class="btn btn-primary" disabled={isSubmitting}>
+          <button type="submit" class="btn btn-primary" disabled={isSubmitting || uploadingCount > 0}>
             {isSubmitting ? 'Saving...' : $editingRecipe ? 'Update Recipe' : 'Save Recipe'}
           </button>
         </div>
@@ -627,6 +700,21 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
+  }
+
+  .photo-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .uploaded-label {
+    flex: 1;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0.5rem 0.25rem;
   }
 
   .tiny-preview {

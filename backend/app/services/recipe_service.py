@@ -9,6 +9,7 @@ from app.models.recipe import (
     ScaledIngredient,
     ScaledRecipeResponse,
 )
+from app.repositories.image_repository import ImageRepository
 from app.repositories.recipe_repository import RecipeRepository
 from app.seed_data import SAMPLE_RECIPES
 
@@ -25,6 +26,11 @@ def round_amount(amount: float) -> float:
 class RecipeService:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.repository = RecipeRepository(db)
+        self.images = ImageRepository(db)
+
+    async def _stored_image_urls(self, recipe_id: str) -> List[str]:
+        recipe = await self.repository.get_by_id(recipe_id)
+        return list(recipe.images) if recipe else []
 
     async def list_recipes(
         self,
@@ -66,10 +72,18 @@ class RecipeService:
         return await self.repository.get_by_id(recipe_id, current_user_id=current_user_id)
 
     async def create_recipe(self, recipe_in: RecipeCreate, current_user_id: Optional[str] = None) -> RecipeResponse:
-        return await self.repository.create(recipe_in, current_user_id=current_user_id)
+        created = await self.repository.create(recipe_in, current_user_id=current_user_id)
+        await self.images.mark_attached(created.images)
+        return created
 
     async def update_recipe(self, recipe_id: str, recipe_in: RecipeUpdate, current_user_id: Optional[str] = None) -> Optional[RecipeResponse]:
-        return await self.repository.update(recipe_id, recipe_in, current_user_id=current_user_id)
+        previous_images = await self._stored_image_urls(recipe_id) if recipe_in.images is not None else []
+        updated = await self.repository.update(recipe_id, recipe_in, current_user_id=current_user_id)
+        if updated:
+            await self.images.mark_attached(updated.images)
+            # Uploaded photos removed from the recipe are deleted once nothing else uses them
+            await self.images.delete_unreferenced([url for url in previous_images if url not in updated.images])
+        return updated
 
     async def vote_recipe(
         self,
@@ -81,7 +95,11 @@ class RecipeService:
         return await self.repository.vote(recipe_id, user_id, vote_val, toggle=toggle)
 
     async def delete_recipe(self, recipe_id: str) -> bool:
-        return await self.repository.delete(recipe_id)
+        previous_images = await self._stored_image_urls(recipe_id)
+        deleted = await self.repository.delete(recipe_id)
+        if deleted:
+            await self.images.delete_unreferenced(previous_images)
+        return deleted
 
 
     async def scale_recipe(self, recipe_id: str, target_servings: int) -> Optional[ScaledRecipeResponse]:
@@ -132,6 +150,8 @@ class RecipeService:
         if total == 0 or force:
             if force and total > 0:
                 await self.repository.collection.delete_many({})
+                # Every recipe is gone, so every uploaded photo is now an orphan
+                await self.images.delete_all()
             inserted_count = 0
             for sample in SAMPLE_RECIPES:
                 await self.repository.create(sample)
