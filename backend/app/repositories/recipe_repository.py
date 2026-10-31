@@ -4,7 +4,18 @@ from typing import Any, Dict, List, Optional, Tuple
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.models.recipe import RecipeCreate, RecipeResponse, RecipeUpdate
+from app.models.recipe import MAX_IMAGES, MAX_TAGS, RecipeCreate, RecipeResponse, RecipeUpdate, validate_image_url
+
+
+def safe_image_urls(urls: List[Any]) -> List[str]:
+    """Drop stored image URLs that aren't plain http(s) (e.g. legacy javascript:/data: values) before display."""
+    safe: List[str] = []
+    for url in urls:
+        try:
+            safe.append(validate_image_url(str(url)))
+        except ValueError:
+            continue
+    return safe
 
 
 def doc_to_response(doc: Dict[str, Any], current_user_id: Optional[str] = None) -> RecipeResponse:
@@ -21,8 +32,9 @@ def doc_to_response(doc: Dict[str, Any], current_user_id: Optional[str] = None) 
     image_url = doc.get("image_url")
     if not raw_images and image_url:
         raw_images = [image_url]
-    elif raw_images and not image_url:
-        image_url = raw_images[0]
+    raw_images = safe_image_urls(raw_images)[:MAX_IMAGES]
+    if image_url not in raw_images:
+        image_url = raw_images[0] if raw_images else None
 
     upvoted_by = [str(u) for u in doc.get("upvoted_by", [])]
     downvoted_by = [str(u) for u in doc.get("downvoted_by", [])]
@@ -60,7 +72,7 @@ def doc_to_response(doc: Dict[str, Any], current_user_id: Optional[str] = None) 
         difficulty=doc.get("difficulty", "Medium"),
         cuisine=doc.get("cuisine", "International"),
         category=doc.get("category", "Main Course"),
-        tags=doc.get("tags", []),
+        tags=list(dict.fromkeys(doc.get("tags", [])))[:MAX_TAGS],
         ingredients=doc.get("ingredients", []),
         instructions=doc.get("instructions", []),
         images=raw_images,
@@ -71,6 +83,8 @@ def doc_to_response(doc: Dict[str, Any], current_user_id: Optional[str] = None) 
         user_vote=user_vote,
         is_favorite=doc.get("is_favorite", False) or (user_vote == 1),
         notes=doc.get("notes"),
+        created_by=doc.get("created_by"),
+        updated_by=doc.get("updated_by"),
         created_at=created_at,
         updated_at=updated_at,
     )
@@ -224,6 +238,8 @@ class RecipeRepository:
         doc = recipe_in.model_dump()
         doc["created_at"] = now
         doc["updated_at"] = now
+        doc["created_by"] = current_user_id
+        doc["updated_by"] = current_user_id
         doc["upvoted_by"] = []
         doc["downvoted_by"] = []
         doc.setdefault("upvotes_count", 0)
@@ -245,6 +261,7 @@ class RecipeRepository:
             return await self.get_by_id(recipe_id, current_user_id=current_user_id)
 
         update_data["updated_at"] = datetime.now(timezone.utc)
+        update_data["updated_by"] = current_user_id
 
         result = await self.collection.find_one_and_update(
             {"_id": obj_id},

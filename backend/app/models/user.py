@@ -34,8 +34,8 @@ class UserPermissionUpdate(BaseModel):
 
 
 class UserCreateRequest(BaseModel):
-    email: str
-    name: Optional[str] = None
+    email: str = Field(..., max_length=254)
+    name: Optional[str] = Field(default=None, max_length=100)
     role: str = Field(default="viewer", description="'admin', 'editor', or 'viewer'")
 
 
@@ -48,17 +48,19 @@ class UserListResponse(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: Optional[str] = Field(default=None, description="Only returned when include_token=true (API clients)")
     token_type: str = "bearer"
     user: UserPublic
 
 
 class GoogleVerifyRequest(BaseModel):
-    credential: Optional[str] = None
-    google_id: Optional[str] = None
-    email: Optional[str] = None
-    name: Optional[str] = None
-    picture: Optional[str] = None
+    credential: Optional[str] = Field(default=None, max_length=4096)
+    # Dev-login only fields (ignored unless DEV_LOGIN_ENABLED in a local environment)
+    google_id: Optional[str] = Field(default=None, max_length=128)
+    email: Optional[str] = Field(default=None, max_length=254)
+    name: Optional[str] = Field(default=None, max_length=100)
+    picture: Optional[str] = Field(default=None, max_length=2048)
+    include_token: bool = Field(default=False, description="Also return the session token in the body (for non-browser API clients)")
 
 
 class AuthConfigResponse(BaseModel):

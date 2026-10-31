@@ -10,6 +10,7 @@
     isAuthModalOpen,
     isAdminModalOpen,
     handleLogout,
+    handleLogoutAll,
     authLoading
   } from '../stores';
 
@@ -55,6 +56,11 @@
   async function onLogout() {
     closeUserMenu();
     await handleLogout();
+  }
+
+  async function onLogoutAll() {
+    closeUserMenu();
+    await handleLogoutAll();
   }
 
   function openAuth() {
@@ -174,6 +180,11 @@
               <button class="menu-item menu-item-logout" on:click={onLogout}>
                 <span>🚪</span>
                 <span>Sign Out</span>
+              </button>
+
+              <button class="menu-item menu-item-logout" on:click={onLogoutAll}>
+                <span>🔒</span>
+                <span>Sign Out Everywhere</span>
               </button>
             </div>
           {/if}

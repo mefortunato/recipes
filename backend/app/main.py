@@ -1,11 +1,13 @@
+import json
 import logging
 import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.database import connect_to_mongo, close_mongo_connection, db_manager
@@ -14,17 +16,35 @@ from app.services.recipe_service import RecipeService
 
 settings = get_settings()
 
-# Setup logging
-log_format = (
-    '{"time": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}'
-    if settings.log_format == "json"
-    else "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+class JsonLogFormatter(logging.Formatter):
+    """Serialize records with json.dumps so attacker-controlled text (OAuth error params, emails)
+    can't break out of the message field and forge log entries."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry = {
+            "time": self.formatTime(record),
+            "severity": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(entry, ensure_ascii=False)
+
+
+class SafeTextFormatter(logging.Formatter):
+    """Escape newlines so one log record can't masquerade as several."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return super().format(record).replace("\r", "\\r").replace("\n", "\\n")
+
+
+log_handler = logging.StreamHandler(sys.stdout)
+log_handler.setFormatter(
+    JsonLogFormatter() if settings.log_format == "json"
+    else SafeTextFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 )
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format=log_format,
-    stream=sys.stdout,
-)
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO), handlers=[log_handler])
 logger = logging.getLogger("recipe_book.main")
 
 
@@ -66,18 +86,80 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+DOCS_PATHS = ("/docs", "/redoc", "/openapi.json")
+
+# The SPA loads Google Identity Services and Google Fonts; recipe images can come from any https host.
+CONTENT_SECURITY_POLICY = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' https://accounts.google.com/gsi/client",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    "connect-src 'self' https://accounts.google.com/gsi/",
+    "frame-src https://accounts.google.com/gsi/",
+    "form-action 'self' https://accounts.google.com",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "object-src 'none'",
+])
+
+
+def request_origin_allowed(request: Request) -> bool:
+    """CSRF defense in depth for cookie-authenticated browsers.
+
+    Browsers send Origin (and Sec-Fetch-Site) on state-changing requests; reject those coming from
+    a site we don't trust. Non-browser API clients send neither and authenticate with a bearer token.
+    """
+    origin = request.headers.get("origin")
+    if origin == "null":
+        return False
+    if origin:
+        origin = origin.rstrip("/")
+        if origin in settings.trusted_origins:
+            return True
+        # Same-origin requests: compare hosts, not schemes, since TLS usually ends at the load
+        # balancer and the app itself sees plain http. A page can't forge its own Host header.
+        return urlparse(origin).netloc.lower() == request.headers.get("host", "").lower()
+    return request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "same-site", "none")
 
 
 @app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    """Measure request latency and add standard X-Process-Time header."""
+async def security_middleware(request: Request, call_next):
+    """Block cross-site writes, then add security headers and the X-Process-Time latency header."""
+    if (
+        settings.csrf_origin_check_enabled
+        and request.method in UNSAFE_METHODS
+        and request.url.path.startswith(settings.api_prefix)
+        and not request_origin_allowed(request)
+    ):
+        logger.warning("Blocked cross-site %s %s from origin %r", request.method, request.url.path, request.headers.get("origin"))
+        return JSONResponse(status_code=403, content={"detail": "Cross-site request blocked."})
+
     start_time = time.time()
     response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = f"{process_time:.4f}s"
+    response.headers["X-Process-Time"] = f"{time.time() - start_time:.4f}s"
+
+    if settings.security_headers_enabled:
+        headers = response.headers
+        headers.setdefault("X-Content-Type-Options", "nosniff")
+        headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        headers.setdefault("X-Frame-Options", "DENY")
+        headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        # GIS popups need to talk back to the opener window
+        headers.setdefault("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
+        if settings.cookie_secure:
+            headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # Swagger/ReDoc pages pull their bundles from a CDN with inline bootstrapping; leave them out of the CSP
+        if not request.url.path.startswith(DOCS_PATHS):
+            headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        if request.url.path.startswith(settings.api_prefix):
+            # API responses are per-user (votes, roles); never let shared caches keep them
+            headers.setdefault("Cache-Control", "no-store")
     return response
 
 

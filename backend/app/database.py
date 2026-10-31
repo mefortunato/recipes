@@ -77,6 +77,12 @@ async def init_db_indexes(db: AsyncIOMotorDatabase) -> None:
         logger.warning("Could not create recipe indexes: %s", exc)
 
     try:
+        # Revoked session IDs only need to be kept until the token would have expired anyway
+        await db["revoked_tokens"].create_index("expires_at", expireAfterSeconds=0)
+    except Exception as exc:
+        logger.warning("Could not create revoked_tokens TTL index: %s", exc)
+
+    try:
         # One account per email, even when two first sign-ins race
         await db["users"].create_index("email", unique=True)
     except Exception as exc:

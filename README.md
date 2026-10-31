@@ -179,14 +179,14 @@ JWT_SECRET=<output of: openssl rand -hex 32>
 ```
 Bootstrap emails are always treated as **Admin** while they are listed in `ALLOWED_EDITOR_EMAILS`; removing an email from the list removes that override. Every other user's permissions come from their stored `role` (`viewer`, `editor`, or `admin`), which admins manage in the Admin Panel.
 
-If `JWT_SECRET` is missing or weak outside production, the server logs a warning and uses a random per-process secret (sessions reset on restart). With `ENVIRONMENT=production` the server refuses to start with a weak secret, a `*` CORS origin, or `DEV_LOGIN_ENABLED=true`.
+If `JWT_SECRET` is missing or weak outside production, the server logs a warning and uses a random per-process secret (sessions reset on restart). With `ENVIRONMENT=production` the server refuses to start with a weak secret or a `*` CORS origin, and `DEV_LOGIN_ENABLED=true` is refused in every environment other than `development`/`test`.
 
 ### 3. User Roles & Admin Panel
 Privileged administrators can access the in-app **🛡️ Admin Panel** to manage team permissions securely:
 - **Viewer**: Read-only access to browse, search, and scale recipes.
 - **Editor**: Can create, update, and manage recipes.
 - **Admin**: Full recipe management plus user role management and team pre-provisioning.
-- **Security Hardening**: Google ID tokens are only accepted after full signature, audience, issuer and expiry verification (no fallbacks). Sessions use an `httpOnly`, `SameSite=Lax` cookie (`Secure` in production), and the redirect-based OAuth flow is protected with a `state` parameter.
+- **Security Hardening**: Google ID tokens are only accepted after full signature, audience, issuer and expiry verification (no fallbacks). Sessions use an `httpOnly`, `SameSite=Lax` cookie (`Secure` outside local development), and the redirect-based OAuth flow is protected with a `state` parameter. Sessions are revocable: **Sign Out** kills the token server-side, **Sign Out Everywhere** invalidates every device, and admins can revoke any user's sessions. Cross-site writes are blocked by an Origin check, every response carries a strict Content-Security-Policy and related headers, and an email already linked to one Google account can't be claimed by another. See [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for details.
 
 ---
 
@@ -298,6 +298,9 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 | `GET` | `/api/v1/recipes/meta/tags` | List all unique tags across recipes |
 | `GET` | `/api/v1/recipes/meta/cuisines`| List all unique cuisines |
 | `GET` | `/api/v1/recipes/meta/categories`| List all meal categories |
+| `POST` | `/api/v1/auth/logout` | Sign out and revoke the current session token |
+| `POST` | `/api/v1/auth/logout-all` | Revoke every session for the current user |
+| `POST` | `/api/v1/admin/users/{id}/revoke-sessions` | Admin: sign a user out of all sessions |
 | `POST` | `/api/v1/recipes/seed` | Seed default curated recipes into database (Admin only, requires verification if DB > 0) |
 
 ---
