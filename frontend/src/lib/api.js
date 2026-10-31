@@ -34,6 +34,31 @@ async function request(endpoint, options = {}) {
   }
 }
 
+// Phone photos can be 10+ MB. Shrink big ones in the browser first so uploads are quick;
+// the server still validates, resizes and re-encodes everything it stores.
+const CLIENT_RESIZE_THRESHOLD_BYTES = 2 * 1024 * 1024;
+const CLIENT_MAX_DIMENSION = 2400;
+
+async function shrinkForUpload(file) {
+  if (file.size <= CLIENT_RESIZE_THRESHOLD_BYTES || typeof createImageBitmap !== 'function') {
+    return file;
+  }
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, CLIENT_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    return blob && blob.size < file.size ? blob : file;
+  } catch {
+    // Browser can't decode it (e.g. HEIC on desktop): let the server decide
+    return file;
+  }
+}
+
 export const api = {
   // Authentication & Permissions
   async getAuthConfig() {
@@ -156,6 +181,27 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(recipeData),
     });
+  },
+
+  // Upload a photo; resolves to { id, url, width, height, size_bytes, ... }
+  async uploadImage(file) {
+    const body = new FormData();
+    const prepared = await shrinkForUpload(file);
+    body.append('file', prepared, file.name || 'photo.jpg');
+    // No Content-Type header: the browser sets the multipart boundary itself
+    const response = await fetch(`${API_BASE}/images`, { method: 'POST', body, credentials: 'include' });
+    const isJson = response.headers.get('content-type')?.includes('application/json');
+    const data = isJson ? await response.json() : null;
+    if (!response.ok) {
+      const detail = data?.detail;
+      const message = typeof detail === 'string'
+        ? detail
+        : response.status === 413
+          ? 'Image is too large to upload.'
+          : 'Image upload failed.';
+      throw new Error(message);
+    }
+    return data;
   },
 
   async deleteRecipe(id) {

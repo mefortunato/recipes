@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Annotated, List, Optional, Literal, Union
+import re
 from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
+from app.config import get_settings
 
 # Size limits keep a single editor (or a stolen editor session) from storing megabytes per recipe
 MAX_TAGS = 30
@@ -13,14 +15,28 @@ MAX_INSTRUCTIONS = 100
 MAX_MINUTES = 60 * 24 * 7
 
 
+# Photos uploaded through the API are served from this app, so recipes reference them by path
+UPLOADED_IMAGE_PATH_PREFIX = f"{get_settings().api_prefix}/images/"
+UPLOADED_IMAGE_PATH_RE = re.compile("^" + re.escape(UPLOADED_IMAGE_PATH_PREFIX) + r"([0-9a-f]{24})$")
+
+
+def uploaded_image_id(url: str) -> Optional[str]:
+    """Return the stored image id when the URL points at an uploaded photo, else None."""
+    match = UPLOADED_IMAGE_PATH_RE.match(url or "")
+    return match.group(1) if match else None
+
+
 def validate_image_url(url: str) -> str:
-    """Only absolute http(s) URLs: rejects javascript:, data:, file: and protocol-relative values."""
+    """Absolute http(s) URLs or our own uploaded-image paths: rejects javascript:, data:, file:,
+    protocol-relative values and any other relative path."""
     url = url.strip()
+    if uploaded_image_id(url):
+        return url
     if len(url) > MAX_URL_LENGTH:
         raise ValueError(f"Image URLs must be at most {MAX_URL_LENGTH} characters.")
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ValueError("Image URLs must be absolute http:// or https:// URLs.")
+        raise ValueError("Image URLs must be absolute http:// or https:// URLs, or uploaded photos.")
     if any(ch.isspace() for ch in url) or any(ord(ch) < 32 for ch in url):
         raise ValueError("Image URLs must not contain whitespace or control characters.")
     return url

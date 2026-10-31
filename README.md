@@ -147,7 +147,7 @@ Or run the all-in-one build and verification script:
 
 Gourmet Vault employs role-based access control (RBAC):
 - **Public & Foodie Viewers**: Can browse, filter, search, view recipes, scale serving portions, and utilize the interactive mise-en-place checklist.
-- **Authorized Chefs / Editors**: Can add new recipes, update existing recipes, upload/reorder gallery images, and delete recipes.
+- **Authorized Chefs / Editors**: Can add new recipes, update existing recipes, upload photos or link image URLs, reorder gallery images, and delete recipes.
 - **Administrators**: Full system permissions, user role management, and database seeding verification in the Admin Panel.
 
 ### 1. Google Cloud Console Setup
@@ -295,6 +295,8 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 | `PUT` | `/api/v1/recipes/{id}` | Update existing recipe |
 | `DELETE` | `/api/v1/recipes/{id}` | Delete recipe |
 | `GET` | `/api/v1/recipes/{id}/scale` | Dynamically scale recipe ingredients for $N$ servings |
+| `POST` | `/api/v1/images` | Upload a recipe photo (editors only). It is scaled to at most 1600px, re-encoded as WebP (≤ ~600 KB, EXIF stripped) and stored in MongoDB |
+| `GET` | `/api/v1/images/{id}` | Serve an uploaded photo (long-lived immutable cache headers) |
 | `GET` | `/api/v1/recipes/meta/tags` | List all unique tags across recipes |
 | `GET` | `/api/v1/recipes/meta/cuisines`| List all unique cuisines |
 | `GET` | `/api/v1/recipes/meta/categories`| List all meal categories |
