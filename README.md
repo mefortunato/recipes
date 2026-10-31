@@ -13,7 +13,7 @@ A modern, responsive full-stack recipe book application built with **FastAPI**, 
 - **Modern Python with `uv`**: Ultra-fast dependency resolution and virtual environment management via Astral's `uv`.
 - **One-Command Local Dev Environment**: `./scripts/dev.sh` boots local MongoDB container, launches FastAPI with hot reload (`:8000`), and runs Vite dev server (`:5173`) with automated process cleanup on exit.
 - **Self-Contained Multi-Stage Container**: Root [`Dockerfile`](Dockerfile) packages the pre-built Svelte SPA and FastAPI backend into a single container for local Docker Compose and Google Cloud Run.
-- **Automated Google Cloud Run Deployments**: Automated deploy script ([`./scripts/deploy-gcp.sh`](scripts/deploy-gcp.sh)) builds and deploys serverless containers with autoscaling.
+- **Continuous Deployment to Google Cloud Run**: Every push to `main` is tested, built and deployed to production by GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) using keyless Workload Identity Federation. A manual script ([`./scripts/deploy-gcp.sh`](scripts/deploy-gcp.sh)) remains for one-off deploys.
 - **Google Cloud Free Tier Storage Safeguard**: Automated script ([`./scripts/cleanup-gcp-artifacts.sh`](scripts/cleanup-gcp-artifacts.sh)) enforces GCS bucket lifecycle policies and prunes older container images to stay within free-tier limits.
 
 ---
@@ -48,7 +48,7 @@ A modern, responsive full-stack recipe book application built with **FastAPI**, 
 | **Frontend** | Svelte 4, Vite | Custom responsive culinary UI, reactive stores, SPA build |
 | **Database** | MongoDB 7.0 / Atlas | Document store with text search & multi-key indexing |
 | **Containerization** | Docker, Docker Compose | Unified multi-stage container, healthchecks |
-| **Cloud Platform** | Google Cloud Run & Cloud Build | Serverless auto-scaling containers (0 to 10 instances) |
+| **Cloud Platform** | Google Cloud Run, Artifact Registry & GitHub Actions | Serverless auto-scaling containers (0 to 10 instances), deployed on every push to `main` |
 
 ---
 
@@ -204,7 +204,7 @@ cd frontend
 npm run check   # svelte-check (errors only)
 npm run build
 ```
-The same checks, plus a production Docker build, run in GitHub Actions on every push and pull request (`.github/workflows/ci.yml`).
+The same checks, plus a production Docker build, run in GitHub Actions on every pull request (`.github/workflows/ci.yml`) and before every production deploy from `main` (`.github/workflows/deploy.yml`).
 
 ---
 
@@ -227,7 +227,47 @@ The application is packaged as a single self-contained multi-stage Docker contai
 
 ---
 
-### Automated Deployment Script (`gcloud` CLI)
+### Continuous Deployment from GitHub Actions (recommended)
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main` (and on demand from the **Actions** tab). It:
+1. Runs the full CI suite (backend lint and tests, frontend checks, Docker build). Nothing deploys if CI fails.
+2. Authenticates to Google Cloud with **Workload Identity Federation**: GitHub's short-lived OIDC token is exchanged for GCP credentials, so there are no service account JSON keys to store or rotate.
+3. Builds the production image on the runner and pushes it to Artifact Registry, tagged with the commit SHA.
+4. Deploys that exact image to Cloud Run with `ENVIRONMENT=production`, then smoke-tests `/health/ready` (which also checks MongoDB).
+
+Deploys never overlap: a push that lands during a deploy waits for it to finish. The job runs in the `production` GitHub environment, so you can add required reviewers or a wait timer under **Settings → Environments → production**.
+
+#### One-time setup
+1. Authenticate `gcloud` as a project owner and run the setup script:
+   ```bash
+   ./scripts/setup-github-deploy.sh --project my-recipes-app
+   ```
+   It enables the APIs, creates the Artifact Registry repository, a `github-deployer` service account (with `run.admin`, `artifactregistry.writer` on that repository only, and `iam.serviceAccountUser` on the Cloud Run runtime account), and a Workload Identity provider that only trusts this repository's `main` branch. It ends by printing the exact `gh` commands to run in the next step.
+2. In GitHub, create the `production` environment and set:
+
+   | Kind | Name | Value |
+   | :--- | :--- | :--- |
+   | Variable | `GCP_PROJECT_ID` | GCP project ID |
+   | Variable | `GCP_WORKLOAD_IDENTITY_PROVIDER` | Printed by the setup script |
+   | Variable | `GCP_DEPLOY_SERVICE_ACCOUNT` | Printed by the setup script |
+   | Variable | `ALLOWED_EDITOR_EMAILS` | Bootstrap admin emails (comma-separated) |
+   | Variable | `GOOGLE_CLIENT_ID` | OAuth client ID (empty disables Google sign-in) |
+   | Variable (optional) | `GCP_REGION`, `GCP_SERVICE_NAME`, `GCP_ARTIFACT_REPO` | Default `us-central1`, `recipe-book`, `cloud-run-source-deploy` |
+   | Variable (optional) | `CUSTOM_DOMAIN` or `FRONTEND_URL` | Public URL; defaults to the Cloud Run URL |
+   | Variable (optional) | `MONGODB_DB_NAME`, `AUTO_SEED`, `LOG_LEVEL` | Default `recipe_book`, `true`, `INFO` |
+   | Secret | `MONGODB_URI` | MongoDB Atlas connection string |
+   | Secret | `JWT_SECRET` | `openssl rand -hex 32`. The deploy fails if it's shorter than 32 characters |
+   | Secret (optional) | `GOOGLE_CLIENT_SECRET` | OAuth client secret |
+
+3. Push to `main` (or run the **Deploy** workflow manually). The run summary shows the live URL.
+
+Each deploy sets the service's full environment from these values, so change configuration in GitHub, not in the Cloud Run console. Edits made in the console are overwritten by the next deploy.
+
+---
+
+### Manual Deployment Script (`gcloud` CLI)
+
+Use this for one-off or emergency deploys. The next push to `main` redeploys from Git.
 
 1. If you haven't installed the `gcloud` CLI yet:
    ```bash
@@ -277,7 +317,7 @@ To prevent Google Cloud Build and Artifact Registry from exceeding free-tier all
 
 ### Custom Domain Mapping
 To point your own domain name (e.g. `recipes.yourdomain.com`):
-1. In `.env`, optionally set `CUSTOM_DOMAIN=recipes.yourdomain.com` before running `./scripts/deploy-gcp.sh` (or set `FRONTEND_URL=https://recipes.yourdomain.com`).
+1. Set the `CUSTOM_DOMAIN=recipes.yourdomain.com` variable on the `production` GitHub environment (or `FRONTEND_URL=https://recipes.yourdomain.com`). For manual deploys, set it in `.env` instead.
 2. In Google Cloud Console, visit [Cloud Run Domain Mappings](https://console.cloud.google.com/run/domains) and follow the DNS verification steps.
 
 ---
@@ -311,7 +351,8 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 recipes/
 ├── .env.example                       # Environment configuration template
 ├── .dockerignore                      # Keeps secrets & host node_modules out of image builds
-├── .github/workflows/ci.yml           # Lint, tests, frontend check/build, Docker build
+├── .github/workflows/ci.yml           # Lint, tests, frontend check/build, Docker build (PRs + before deploys)
+├── .github/workflows/deploy.yml       # Push to main → CI → build → deploy to Cloud Run
 ├── Dockerfile                         # Unified multi-stage build (Node builder + uv Python runner, non-root)
 ├── docker-compose.yml                 # Unified app (port 8080) + MongoDB (localhost:27017)
 ├── docker-compose.override.yml.example # Example for backend hot-reload container mounts
@@ -342,6 +383,7 @@ recipes/
     ├── dev.sh                         # Unified local dev environment with hot-reload
     ├── build.sh                       # Single-container production build & test runner
     ├── test-docker.sh                 # Local production-container smoke test
-    ├── deploy-gcp.sh                  # Automated Google Cloud Run build & deployment
+    ├── deploy-gcp.sh                  # Manual Google Cloud Run build & deployment
+    ├── setup-github-deploy.sh         # One-time GCP setup for GitHub Actions deploys
     └── cleanup-gcp-artifacts.sh       # GCP Cloud Storage & Artifact Registry pruner
 ```

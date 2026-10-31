@@ -4,6 +4,10 @@
 # ==============================================================
 # Builds and deploys the unified Recipe Book container to Google Cloud Run.
 #
+# Production normally deploys automatically from GitHub Actions on every push
+# to main (.github/workflows/deploy.yml). Keep this script for manual or
+# emergency deploys; note that the next push to main redeploys from Git.
+#
 # Usage:
 #   ./scripts/deploy-gcp.sh [OPTIONS]
 #
@@ -193,15 +197,17 @@ fi
 # --- 7. Build and deploy container directly using Google Cloud Build & Cloud Run ---
 echo ""
 echo "🚀 Step 2/3: Building and deploying container to Cloud Run..."
-ENV_VARS="GCP_PROJECT_ID=${PROJECT_ID},MONGODB_URI=${MONGODB_URI},MONGODB_DB_NAME=${MONGODB_DB_NAME},ENVIRONMENT=${ENVIRONMENT},AUTO_SEED=${AUTO_SEED},LOG_LEVEL=${LOG_LEVEL},LOG_FORMAT=${LOG_FORMAT},JWT_SECRET=${JWT_SECRET},ALLOWED_EDITOR_EMAILS=${ALLOWED_EDITOR_EMAILS}"
+# "^##^" makes gcloud split on "##" instead of ",", so comma-separated values
+# such as ALLOWED_EDITOR_EMAILS=a@x.com,b@y.com stay intact.
+ENV_VARS="^##^GCP_PROJECT_ID=${PROJECT_ID}##MONGODB_URI=${MONGODB_URI}##MONGODB_DB_NAME=${MONGODB_DB_NAME}##ENVIRONMENT=${ENVIRONMENT}##AUTO_SEED=${AUTO_SEED}##LOG_LEVEL=${LOG_LEVEL}##LOG_FORMAT=${LOG_FORMAT}##JWT_SECRET=${JWT_SECRET}##ALLOWED_EDITOR_EMAILS=${ALLOWED_EDITOR_EMAILS}"
 if [ -n "$GOOGLE_CLIENT_ID" ]; then
-  ENV_VARS="${ENV_VARS},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
+  ENV_VARS="${ENV_VARS}##GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
 fi
 if [ -n "$GOOGLE_CLIENT_SECRET" ]; then
-  ENV_VARS="${ENV_VARS},GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}"
+  ENV_VARS="${ENV_VARS}##GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}"
 fi
 if [ -n "$FRONTEND_URL" ]; then
-  ENV_VARS="${ENV_VARS},FRONTEND_URL=${FRONTEND_URL}"
+  ENV_VARS="${ENV_VARS}##FRONTEND_URL=${FRONTEND_URL}"
 fi
 
 DEPLOY_CMD=(
