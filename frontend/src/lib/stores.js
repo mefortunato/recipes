@@ -46,6 +46,7 @@ export const systemHealth = writable({
   status: 'checking',
   database: 'unknown',
   latency_ms: null,
+  docs_url: null,
 });
 
 export function showToast(message, type = 'info', duration = 3500) {
@@ -162,13 +163,16 @@ export async function checkBackendHealth() {
       systemHealth.set({
         status: 'online',
         database: res.database?.status || 'connected',
-        latency_ms: res.database?.latency_ms || 0,
+        // Production returns only {status}; details and the docs link appear outside production
+        latency_ms: res.database?.latency_ms ?? null,
+        docs_url: res.docs_url || null,
       });
     } else {
       systemHealth.set({
         status: res.status || 'degraded',
         database: 'unreachable',
         latency_ms: null,
+        docs_url: null,
       });
     }
   } catch {
@@ -176,6 +180,7 @@ export async function checkBackendHealth() {
       status: 'offline',
       database: 'disconnected',
       latency_ms: null,
+      docs_url: null,
     });
   }
 }

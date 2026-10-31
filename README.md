@@ -73,8 +73,8 @@ To run the complete application with Docker Compose:
 
 4. **Access the Application**:
    - **Recipe Book Web App**: [http://localhost:8080](http://localhost:8080)
-   - **Interactive API Documentation (Swagger)**: [http://localhost:8080/docs](http://localhost:8080/docs)
-   - **Readiness Health Check**: [http://localhost:8080/health/ready](http://localhost:8080/health/ready)
+   - **Interactive API Documentation (Swagger)**: [http://localhost:8080/docs](http://localhost:8080/docs) (not served when `ENVIRONMENT=production`; set `API_DOCS_ENABLED=true` to override)
+   - **Readiness Health Check**: [http://localhost:8080/health/ready](http://localhost:8080/health/ready) (in production this returns only `{"status": "ready"}`, without version, environment or database details)
    - **Optional Mongo Express GUI**: Run with `docker compose --profile tools up` and open [http://localhost:8081](http://localhost:8081) (basic auth: `MONGO_EXPRESS_USER` / `MONGO_EXPRESS_PASSWORD` from `.env`, default `admin` / `pass`). MongoDB and Mongo Express are bound to `127.0.0.1` only.
 
 ---

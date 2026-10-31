@@ -102,7 +102,9 @@
         ></span>
         <span class="health-text">
           {$systemHealth.status === 'online'
-            ? `API Ready (${$systemHealth.latency_ms}ms)`
+            ? $systemHealth.latency_ms != null
+              ? `API Ready (${$systemHealth.latency_ms}ms)`
+              : 'API Ready'
             : 'Connecting...'}
         </span>
       </div>
