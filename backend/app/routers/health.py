@@ -37,6 +37,9 @@ async def readiness_probe() -> Dict[str, Any]:
     try:
         await db_manager.client.admin.command("ping")
         latency_ms = round((time.time() - start_time) * 1000, 2)
+        if not settings.expose_health_details:
+            # Production: answer the probe without fingerprinting the app version, environment or database
+            return {"status": "ready"}
         return {
             "status": "ready",
             "app": settings.app_name,
@@ -47,6 +50,7 @@ async def readiness_probe() -> Dict[str, Any]:
                 "name": settings.mongodb_db_name,
                 "latency_ms": latency_ms,
             },
+            **({"docs_url": "/docs"} if settings.docs_enabled else {}),
         }
     except Exception as exc:
         # Log the driver error server-side; it can include hostnames, so don't return it to callers

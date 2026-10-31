@@ -113,10 +113,12 @@
       </div>
       <div class="footer-right">
         <span>Docker Managed • Cloud-Native Ready</span>
-        <span class="footer-sep">|</span>
-        <a href="/docs" target="_blank" rel="noopener noreferrer" class="footer-link">
-          OpenAPI /docs
-        </a>
+        {#if $systemHealth.docs_url}
+          <span class="footer-sep">|</span>
+          <a href={$systemHealth.docs_url} target="_blank" rel="noopener noreferrer" class="footer-link">
+            OpenAPI /docs
+          </a>
+        {/if}
       </div>
     </div>
   </footer>

@@ -94,6 +94,23 @@ class Settings(BaseSettings):
     security_headers_enabled: bool = Field(default=True, description="Send hardened HTTP security headers")
     # Reject state-changing requests whose Origin/Sec-Fetch-Site shows they came from another site
     csrf_origin_check_enabled: bool = Field(default=True, description="Block cross-site unsafe requests (CSRF defense in depth)")
+    # Swagger UI, ReDoc and /openapi.json map the whole API surface; off in production unless explicitly enabled
+    api_docs_enabled: Optional[bool] = Field(default=None, description="Serve /docs, /redoc and /openapi.json (default: on outside production)")
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
+
+    @property
+    def docs_enabled(self) -> bool:
+        if self.api_docs_enabled is not None:
+            return self.api_docs_enabled
+        return not self.is_production
+
+    @property
+    def expose_health_details(self) -> bool:
+        """Version, environment and database details in health responses are for local debugging only."""
+        return not self.is_production
 
     @property
     def is_local_environment(self) -> bool:
@@ -116,7 +133,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def check_security_settings(self):
-        is_production = self.environment.lower() == "production"
+        is_production = self.is_production
         if self.jwt_secret in INSECURE_JWT_SECRETS or len(self.jwt_secret) < MIN_JWT_SECRET_LENGTH:
             if is_production:
                 raise ValueError(

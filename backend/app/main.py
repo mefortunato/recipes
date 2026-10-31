@@ -73,8 +73,9 @@ app = FastAPI(
     version=settings.app_version,
     description="A modern, cloud-native ready RESTful API for recipe collection management and scaling.",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
 )
 
 # CORS configuration
@@ -186,14 +187,16 @@ async def root(request: Request):
     # Serve SPA index.html when accessed via a browser
     if "text/html" in accept and index_file.is_file():
         return FileResponse(index_file)
-    return {
-        "name": settings.app_name,
-        "version": settings.app_version,
-        "status": "online",
-        "docs_url": "/docs",
-        "api_v1_prefix": settings.api_prefix,
-        "health_endpoint": "/health/ready",
-    }
+    info = {"name": settings.app_name, "status": "online"}
+    if settings.expose_health_details:
+        info.update(
+            version=settings.app_version,
+            api_v1_prefix=settings.api_prefix,
+            health_endpoint="/health/ready",
+        )
+    if settings.docs_enabled:
+        info["docs_url"] = "/docs"
+    return info
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
