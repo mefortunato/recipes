@@ -19,6 +19,7 @@ from app.services.auth_service import (
     LEGACY_PERMISSION_FIELDS,
     ROLES,
     resolve_permissions,
+    revoke_all_sessions,
     stored_role,
     utc_now,
 )
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/admin", tags=["Admin & User Permissions"])
 
 # Upper bound on users returned by the admin list (roles are resolved per user in Python)
 MAX_LISTED_USERS = 1000
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 async def find_user_or_404(db: AsyncIOMotorDatabase, user_id: str) -> Dict[str, Any]:
@@ -136,6 +138,7 @@ async def update_user_permissions(
             )
 
     await save_role(db, target["_id"], new_role)
+    logger.info("Admin %s set role of %s to %s", current_admin.get("email"), target_email, new_role)
     target["role"] = new_role
     for field in LEGACY_PERMISSION_FIELDS:
         target.pop(field, None)
@@ -152,7 +155,7 @@ async def provision_user(
     settings = get_settings()
     email = body.email.strip().lower()
 
-    if not email or "@" not in email:
+    if not EMAIL_RE.match(email):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A valid email address is required.")
 
     role = body.role.strip().lower()
@@ -204,4 +207,18 @@ async def delete_user(
         )
 
     await db.users.delete_one({"_id": target["_id"]})
+    logger.info("Admin %s deleted user %s", current_admin.get("email"), target.get("email"))
     return {"message": "User deleted successfully", "id": user_id}
+
+
+@router.post("/users/{user_id}/revoke-sessions", summary="Sign a user out of every session")
+async def revoke_user_sessions(
+    user_id: str,
+    current_admin: Dict[str, Any] = Depends(require_admin_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Invalidates all of a user's outstanding session tokens (e.g. after a lost device or suspected compromise)."""
+    target = await find_user_or_404(db, user_id)
+    await revoke_all_sessions(db, target["_id"])
+    logger.info("Admin %s revoked all sessions for %s", current_admin.get("email"), target.get("email"))
+    return {"message": "All sessions revoked", "id": user_id}

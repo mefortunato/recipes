@@ -1,7 +1,7 @@
 import logging
 import secrets
 from functools import lru_cache
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +14,8 @@ INSECURE_JWT_SECRETS = {
     "your-random-jwt-secret-replace-in-production",
 }
 MIN_JWT_SECRET_LENGTH = 32
+# Environments where developer conveniences (quick dev login, plain-HTTP cookies) are allowed
+LOCAL_ENVIRONMENTS = {"development", "test"}
 
 
 class Settings(BaseSettings):
@@ -55,8 +57,9 @@ class Settings(BaseSettings):
         default="",
         description="Secret key for signing session JWTs. Required in production (min 32 random characters).",
     )
-    jwt_algorithm: str = Field(default="HS256", description="JWT encryption algorithm")
-    access_token_expire_minutes: int = Field(default=60 * 24 * 7, description="Access token expiration (7 days)")
+    # Only HMAC algorithms make sense with a shared secret; never allow 'none' or asymmetric confusion
+    jwt_algorithm: Literal["HS256", "HS384", "HS512"] = Field(default="HS256", description="JWT signing algorithm")
+    access_token_expire_minutes: int = Field(default=60 * 24 * 7, ge=5, description="Access token expiration (7 days)")
     # Bootstrap administrators. Comma-separated list of emails that are always admins.
     # Empty means no bootstrap admins. A '*' entry lets every signed-in user edit recipes
     # (it never grants admin).
@@ -87,10 +90,29 @@ class Settings(BaseSettings):
             return False
         return email.strip().lower() in self.editor_emails_list
 
+    # HTTP security headers (CSP, HSTS, framing, sniffing) on every response
+    security_headers_enabled: bool = Field(default=True, description="Send hardened HTTP security headers")
+    # Reject state-changing requests whose Origin/Sec-Fetch-Site shows they came from another site
+    csrf_origin_check_enabled: bool = Field(default=True, description="Block cross-site unsafe requests (CSRF defense in depth)")
+
+    @property
+    def is_local_environment(self) -> bool:
+        return self.environment.lower() in LOCAL_ENVIRONMENTS
+
     @property
     def cookie_secure(self) -> bool:
-        """Send session cookies over HTTPS only, except in local development."""
-        return self.environment.lower() == "production"
+        """Send session cookies over HTTPS only, except in local development/test over plain HTTP."""
+        if self.frontend_url.lower().startswith("https://"):
+            return True
+        return not self.is_local_environment
+
+    @property
+    def trusted_origins(self) -> List[str]:
+        """Browser origins allowed to make credentialed, state-changing requests."""
+        origins = [o.rstrip("/") for o in self.cors_origins if o and o != "*"]
+        if self.frontend_url:
+            origins.append(self.frontend_url.rstrip("/"))
+        return list(dict.fromkeys(origins))
 
     @model_validator(mode="after")
     def check_security_settings(self):
@@ -106,8 +128,14 @@ class Settings(BaseSettings):
                 "Sessions will not survive restarts."
             )
             self.jwt_secret = secrets.token_urlsafe(48)
-        if is_production and self.dev_login_enabled:
-            raise ValueError("DEV_LOGIN_ENABLED must be false in production.")
+        if self.dev_login_enabled and not self.is_local_environment:
+            # Dev login lets anyone sign in as any email (including bootstrap admins) without Google,
+            # so it must never be reachable on a shared staging or production deployment.
+            raise ValueError("DEV_LOGIN_ENABLED is only allowed when ENVIRONMENT is 'development' or 'test'.")
+        if is_production and not self.frontend_url:
+            logger.warning(
+                "FRONTEND_URL is not set in production; OAuth redirects will be derived from the request Host header."
+            )
         if is_production and "*" in self.cors_origins:
             raise ValueError("CORS_ORIGINS must not contain '*' in production.")
         return self

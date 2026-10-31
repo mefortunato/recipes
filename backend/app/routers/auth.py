@@ -2,6 +2,7 @@ import logging
 import secrets
 import urllib.parse
 from typing import Dict, Any, Optional
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
 from fastapi.responses import RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -10,10 +11,14 @@ from app.config import Settings, get_settings
 from app.database import get_database
 from app.models.user import UserPublic, TokenResponse, GoogleVerifyRequest, AuthConfigResponse
 from app.services.auth_service import (
-    create_access_token,
+    AccountLinkError,
+    create_session_token,
+    decode_access_token,
     verify_google_credential,
     exchange_google_code,
     get_or_create_user,
+    revoke_all_sessions,
+    revoke_token,
 )
 from app.dependencies.auth import get_current_user
 
@@ -116,13 +121,18 @@ async def google_callback(
     else:
         user_info = await exchange_google_code(code, oauth_callback_url(request, settings))
 
-    if not user_info:
+    user = None
+    if user_info:
+        try:
+            user = await get_or_create_user(db, user_info)
+        except AccountLinkError:
+            user = None
+
+    if not user:
         redirect = RedirectResponse(url=f"{base_url}/?error=oauth_failed")
     else:
-        user = await get_or_create_user(db, user_info)
-        token = create_access_token({"sub": user["_id"], "email": user["email"]})
         redirect = RedirectResponse(url=f"{base_url}/?auth_success=1")
-        set_session_cookie(redirect, token, settings)
+        set_session_cookie(redirect, create_session_token(user), settings)
 
     redirect.delete_cookie(OAUTH_STATE_COOKIE, path=f"{settings.api_prefix}/auth/google")
     return redirect
@@ -141,8 +151,9 @@ async def verify_google(
     if body.credential:
         user_info = await verify_google_credential(body.credential)
     elif settings.dev_login_enabled and body.email:
+        # No google_id: a dev login must never bind (or be checked against) a real Google identity
         user_info = {
-            "google_id": body.google_id or f"dev_{body.email.replace('@', '_').replace('.', '_')}",
+            "google_id": None,
             "email": body.email,
             "name": body.name or body.email.split("@")[0].capitalize(),
             "picture": body.picture or f"https://api.dicebear.com/7.x/bottts/svg?seed={body.name or body.email}",
@@ -154,12 +165,20 @@ async def verify_google(
             detail="Could not verify Google ID token with Google identity servers.",
         )
 
-    user = await get_or_create_user(db, user_info)
-    token = create_access_token({"sub": user["_id"], "email": user["email"]})
+    try:
+        user = await get_or_create_user(db, user_info)
+    except AccountLinkError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This email is linked to a different Google account. Contact an administrator.",
+        ) from None
+    token = create_session_token(user)
     set_session_cookie(response, token, settings)
 
+    # Browsers use the httpOnly cookie; only hand the raw token to API clients that ask for it,
+    # so an XSS bug can't simply read a long-lived session token out of a login response.
     return TokenResponse(
-        access_token=token,
+        access_token=token if body.include_token else None,
         token_type="bearer",
         user=UserPublic(**user),
     )
@@ -171,9 +190,43 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
     return UserPublic(**current_user)
 
 
-@router.post("/logout", summary="Sign out current user")
-async def logout(response: Response):
-    """Clears the access_token session cookie."""
-    settings = get_settings()
+def clear_session_cookie(response: Response, settings: Settings) -> None:
     response.delete_cookie(key=SESSION_COOKIE, httponly=True, samesite="lax", secure=settings.cookie_secure)
+
+
+def presented_token(request: Request) -> Optional[str]:
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip() or None
+    return request.cookies.get(SESSION_COOKIE)
+
+
+@router.post("/logout", summary="Sign out current user")
+async def logout(
+    request: Request,
+    response: Response,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Revokes the presented session token server-side and clears the session cookie.
+
+    Revocation means a copied/stolen token stops working too, not just this browser's cookie.
+    """
+    settings = get_settings()
+    token = presented_token(request)
+    payload = decode_access_token(token) if token else None
+    if payload:
+        await revoke_token(db, payload)
+    clear_session_cookie(response, settings)
     return {"message": "Logged out successfully"}
+
+
+@router.post("/logout-all", summary="Sign out of every session (all devices)")
+async def logout_all(
+    response: Response,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """Invalidates every session token issued to the current user, on every device."""
+    await revoke_all_sessions(db, ObjectId(current_user["_id"]))
+    clear_session_cookie(response, get_settings())
+    return {"message": "Signed out of all sessions"}

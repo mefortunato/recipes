@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import secrets
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 import jwt
@@ -16,6 +17,12 @@ logger = logging.getLogger("recipe_book.auth")
 ROLES = ("admin", "editor", "viewer")
 # Permission flags that older user documents stored alongside 'role'; 'role' is now the only source of truth
 LEGACY_PERMISSION_FIELDS = {"can_edit": "", "is_admin": "", "is_bootstrap": ""}
+# Collection of individually revoked session token IDs (expired entries are purged by a TTL index)
+REVOKED_TOKENS_COLLECTION = "revoked_tokens"
+
+
+class AccountLinkError(Exception):
+    """A Google identity tried to sign in to an account already bound to a different Google identity."""
 
 
 def utc_now() -> datetime:
@@ -23,21 +30,66 @@ def utc_now() -> datetime:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Sign a session token. Each token gets a unique `jti` so it can be revoked on its own."""
     settings = get_settings()
     to_encode = data.copy()
     now = utc_now()
     expire = now + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
-    to_encode.update({"iat": now, "exp": expire})
+    to_encode.update({"iat": now, "exp": expire, "jti": secrets.token_urlsafe(16)})
+    to_encode.setdefault("sv", 0)
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def create_session_token(user: Dict[str, Any]) -> str:
+    """Session token bound to the user's current session_version (bumped by 'sign out everywhere')."""
+    return create_access_token({
+        "sub": str(user["_id"]),
+        "email": user["email"],
+        "sv": int(user.get("session_version", 0)),
+    })
 
 
 def decode_access_token(token: str) -> Optional[dict]:
     settings = get_settings()
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        return jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "iat", "sub"]},
+        )
     except jwt.PyJWTError as e:
         logger.warning("JWT decode failure: %s", e)
         return None
+
+
+async def revoke_token(db: AsyncIOMotorDatabase, payload: Dict[str, Any]) -> None:
+    """Deny-list a single session token until it would have expired anyway."""
+    jti = payload.get("jti")
+    if not jti:
+        return
+    expires_at = datetime.fromtimestamp(int(payload.get("exp", 0)), tz=timezone.utc)
+    await db[REVOKED_TOKENS_COLLECTION].update_one(
+        {"_id": jti},
+        {"$set": {"expires_at": expires_at, "sub": payload.get("sub")}},
+        upsert=True,
+    )
+
+
+async def is_token_revoked(db: AsyncIOMotorDatabase, payload: Dict[str, Any], user_doc: Dict[str, Any]) -> bool:
+    """A token is dead if it was individually revoked or predates the user's latest 'sign out everywhere'."""
+    if int(payload.get("sv", 0)) != int(user_doc.get("session_version", 0)):
+        return True
+    jti = payload.get("jti")
+    if not jti:
+        # Tokens issued before revocation support can't be revoked individually; reject them
+        return True
+    return await db[REVOKED_TOKENS_COLLECTION].find_one({"_id": jti}) is not None
+
+
+async def revoke_all_sessions(db: AsyncIOMotorDatabase, user_id: Any) -> None:
+    """Invalidate every outstanding session token for a user."""
+    await db.users.update_one({"_id": user_id}, {"$inc": {"session_version": 1}})
 
 
 def stored_role(user_doc: Dict[str, Any]) -> str:
@@ -159,6 +211,12 @@ async def get_or_create_user(db: AsyncIOMotorDatabase, user_info: Dict[str, Any]
     existing = await db.users.find_one({"email": email})
 
     if existing:
+        incoming_google_id = user_info.get("google_id")
+        if existing.get("google_id") and incoming_google_id and existing["google_id"] != incoming_google_id:
+            # Email addresses can be recycled (e.g. a deleted Workspace account recreated for a new
+            # person). Don't let a different Google identity inherit the old account and its role.
+            logger.warning("Rejected sign-in for %s: Google account ID does not match the linked account", email)
+            raise AccountLinkError(email)
         update_fields = {
             "last_login": utc_now(),
             # Persist the role implied by any legacy flags, then drop the flags

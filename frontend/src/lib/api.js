@@ -64,7 +64,7 @@ export const api = {
   },
 
   async updateUserPermissions(userId, permissions) {
-    return request(`/admin/users/${userId}/permissions`, {
+    return request(`/admin/users/${encodeURIComponent(userId)}/permissions`, {
       method: 'PATCH',
       body: JSON.stringify(permissions),
     });
@@ -78,13 +78,21 @@ export const api = {
   },
 
   async deleteUser(userId) {
-    return request(`/admin/users/${userId}`, {
+    return request(`/admin/users/${encodeURIComponent(userId)}`, {
       method: 'DELETE',
     });
   },
 
   async logout() {
     return request('/auth/logout', { method: 'POST' });
+  },
+
+  async logoutAll() {
+    return request('/auth/logout-all', { method: 'POST' });
+  },
+
+  async revokeUserSessions(userId) {
+    return request(`/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, { method: 'POST' });
   },
 
   // Recipes
@@ -108,30 +116,30 @@ export const api = {
   },
 
   async getRecipe(id) {
-    return request(`/recipes/${id}`);
+    return request(`/recipes/${encodeURIComponent(id)}`);
   },
 
   async voteRecipe(id, vote, toggle = false) {
-    return request(`/recipes/${id}/vote`, {
+    return request(`/recipes/${encodeURIComponent(id)}/vote`, {
       method: 'POST',
       body: JSON.stringify({ vote, toggle }),
     });
   },
 
   async upvoteRecipe(id) {
-    return request(`/recipes/${id}/upvote`, {
+    return request(`/recipes/${encodeURIComponent(id)}/upvote`, {
       method: 'POST',
     });
   },
 
   async downvoteRecipe(id) {
-    return request(`/recipes/${id}/downvote`, {
+    return request(`/recipes/${encodeURIComponent(id)}/downvote`, {
       method: 'POST',
     });
   },
 
   async clearRecipeVote(id) {
-    return request(`/recipes/${id}/vote`, {
+    return request(`/recipes/${encodeURIComponent(id)}/vote`, {
       method: 'DELETE',
     });
   },
@@ -144,20 +152,20 @@ export const api = {
   },
 
   async updateRecipe(id, recipeData) {
-    return request(`/recipes/${id}`, {
+    return request(`/recipes/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(recipeData),
     });
   },
 
   async deleteRecipe(id) {
-    return request(`/recipes/${id}`, {
+    return request(`/recipes/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
   },
 
   async scaleRecipe(id, servings) {
-    return request(`/recipes/${id}/scale?servings=${servings}`);
+    return request(`/recipes/${encodeURIComponent(id)}/scale?servings=${encodeURIComponent(servings)}`);
   },
 
   // Metadata

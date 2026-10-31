@@ -6,7 +6,7 @@ from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database import get_database
-from app.services.auth_service import decode_access_token, resolve_permissions
+from app.services.auth_service import decode_access_token, is_token_revoked, resolve_permissions
 
 security = HTTPBearer(auto_error=False)
 
@@ -51,6 +51,15 @@ async def get_current_user(
             detail="User not found.",
         )
 
+    if await is_token_revoked(db, payload, user):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This session has been signed out. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Expose the verified token claims so handlers like /logout can revoke this exact session
+    request.state.token_payload = payload
     return resolve_permissions(user)
 
 

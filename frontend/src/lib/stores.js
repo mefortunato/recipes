@@ -113,6 +113,17 @@ export async function handleLogout() {
   }
 }
 
+export async function handleLogoutAll() {
+  try {
+    await api.logoutAll();
+    currentUser.set(null);
+    showToast('Signed out of all devices.', 'info');
+    loadRecipes();
+  } catch (err) {
+    showToast('Error signing out of all devices.', 'error');
+  }
+}
+
 export async function loadRecipes() {
   loading.set(true);
   try {
