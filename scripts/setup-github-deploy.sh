@@ -170,7 +170,12 @@ cat <<EOF
 ✅ GCP setup complete.
 ======================================================
 Configure the "production" environment in GitHub
-(Settings → Environments → production), or run these with the gh CLI:
+(Settings → Environments → production), or run these with the gh CLI.
+gh must be logged in as you (gh auth login), not via a GITHUB_TOKEN/GH_TOKEN
+app token, or GitHub answers "403 Resource not accessible by integration".
+
+Create the environment first:
+  gh api -X PUT repos/${GITHUB_REPO}/environments/production
 
 Variables (not secret):
   gh variable set GCP_PROJECT_ID --env production --repo ${GITHUB_REPO} --body "${PROJECT_ID}"
