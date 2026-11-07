@@ -320,6 +320,15 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 1. Set the `CUSTOM_DOMAIN=recipes.yourdomain.com` variable on the `production` GitHub environment (or `FRONTEND_URL=https://recipes.yourdomain.com`). For manual deploys, set it in `.env` instead.
 2. In Google Cloud Console, visit [Cloud Run Domain Mappings](https://console.cloud.google.com/run/domains) and follow the DNS verification steps.
 
+### 4. Letting AI Agents Save Recipes
+When you co-write recipes with an AI agent, it can save the ones you like straight into the book:
+
+1. Sign in as an editor, open the account menu and choose **🤖 Agent API Keys**.
+2. Create a key and copy the generated instructions into your agent (e.g. a Claude project's instructions). They point the agent at `GET /api/v1/agents/guide`, a public Markdown guide with the recipe format, and include the key to send as `Authorization: Bearer rbk_...`.
+3. When you tell the agent you like a recipe, it searches for duplicates and then `POST`s it to `/api/v1/recipes` (or `PUT`s an update).
+
+Keys act as you but can only read, create and edit recipes and upload photos: they can't delete recipes, manage users, sign out sessions or create more keys. Only a SHA-256 digest of each key is stored; the key itself is shown once. Your role is checked on every request, so a demoted or deleted user's keys stop working at once, and an admin's **revoke sessions** also revokes that user's keys. Revoke a key any time from the same dialog. If the agent runs in a sandbox with a network allowlist (e.g. Claude Code on the web), add your app's host to it.
+
 ---
 
 ## 📡 API Endpoints Overview
@@ -342,7 +351,11 @@ To point your own domain name (e.g. `recipes.yourdomain.com`):
 | `GET` | `/api/v1/recipes/meta/categories`| List all meal categories |
 | `POST` | `/api/v1/auth/logout` | Sign out and revoke the current session token |
 | `POST` | `/api/v1/auth/logout-all` | Revoke every session for the current user |
-| `POST` | `/api/v1/admin/users/{id}/revoke-sessions` | Admin: sign a user out of all sessions |
+| `POST` | `/api/v1/admin/users/{id}/revoke-sessions` | Admin: sign a user out of all sessions and revoke their API keys |
+| `GET` | `/api/v1/auth/api-keys` | List your agent API keys (browser session only) |
+| `POST` | `/api/v1/auth/api-keys` | Create an agent API key, shown once (editors, browser session only) |
+| `DELETE` | `/api/v1/auth/api-keys/{id}` | Revoke one of your API keys |
+| `GET` | `/api/v1/agents/guide` | Public Markdown guide telling an AI agent how to submit recipes |
 | `POST` | `/api/v1/recipes/seed` | Seed default curated recipes into database (Admin only, requires verification if DB > 0) |
 
 ---

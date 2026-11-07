@@ -23,6 +23,7 @@ from app.services.auth_service import (
     stored_role,
     utc_now,
 )
+from app.services.api_key_service import revoke_all_api_keys
 
 logger = logging.getLogger("recipe_book.admin")
 
@@ -207,6 +208,7 @@ async def delete_user(
         )
 
     await db.users.delete_one({"_id": target["_id"]})
+    await revoke_all_api_keys(db, target["_id"])
     logger.info("Admin %s deleted user %s", current_admin.get("email"), target.get("email"))
     return {"message": "User deleted successfully", "id": user_id}
 
@@ -217,8 +219,9 @@ async def revoke_user_sessions(
     current_admin: Dict[str, Any] = Depends(require_admin_user),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
-    """Invalidates all of a user's outstanding session tokens (e.g. after a lost device or suspected compromise)."""
+    """Invalidates all of a user's outstanding session tokens and API keys (e.g. after a lost device or suspected compromise)."""
     target = await find_user_or_404(db, user_id)
     await revoke_all_sessions(db, target["_id"])
-    logger.info("Admin %s revoked all sessions for %s", current_admin.get("email"), target.get("email"))
+    await revoke_all_api_keys(db, target["_id"])
+    logger.info("Admin %s revoked all sessions and API keys for %s", current_admin.get("email"), target.get("email"))
     return {"message": "All sessions revoked", "id": user_id}

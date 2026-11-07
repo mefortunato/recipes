@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.database import get_database
-from app.dependencies.auth import require_editor_user, require_admin_user, get_current_user, get_optional_user
+from app.dependencies.auth import require_editor_user, require_editor_session_user, require_admin_user, get_current_user, get_optional_user
 from app.models.recipe import (
     RecipeCreate,
     RecipeListResponse,
@@ -221,7 +221,7 @@ async def clear_vote(
 async def delete_recipe(
     recipe_id: str,
     service: RecipeService = Depends(get_service),
-    current_user: Dict[str, Any] = Depends(require_editor_user),
+    current_user: Dict[str, Any] = Depends(require_editor_session_user),
 ):
     deleted = await service.delete_recipe(recipe_id)
     if not deleted:

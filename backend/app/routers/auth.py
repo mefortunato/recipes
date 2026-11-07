@@ -20,7 +20,7 @@ from app.services.auth_service import (
     revoke_all_sessions,
     revoke_token,
 )
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_session_user
 
 logger = logging.getLogger("recipe_book.auth")
 
@@ -223,7 +223,7 @@ async def logout(
 @router.post("/logout-all", summary="Sign out of every session (all devices)")
 async def logout_all(
     response: Response,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    current_user: Dict[str, Any] = Depends(require_session_user),
     db: AsyncIOMotorDatabase = Depends(get_database),
 ):
     """Invalidates every session token issued to the current user, on every device."""

@@ -20,6 +20,7 @@
   import RecipeFormModal from './lib/components/RecipeFormModal.svelte';
   import AuthModal from './lib/components/AuthModal.svelte';
   import AdminModal from './lib/components/AdminModal.svelte';
+  import ApiKeysModal from './lib/components/ApiKeysModal.svelte';
   import Toast from './lib/components/Toast.svelte';
   import EmptyState from './lib/components/EmptyState.svelte';
 
@@ -128,6 +129,7 @@
   <RecipeFormModal />
   <AuthModal />
   <AdminModal />
+  <ApiKeysModal />
   <Toast />
 </div>
 
