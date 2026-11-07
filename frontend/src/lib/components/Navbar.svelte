@@ -9,6 +9,7 @@
     currentUser,
     isAuthModalOpen,
     isAdminModalOpen,
+    isApiKeysModalOpen,
     handleLogout,
     handleLogoutAll,
     authLoading
@@ -20,6 +21,11 @@
   function openAdminPanel() {
     closeUserMenu();
     isAdminModalOpen.set(true);
+  }
+
+  function openApiKeys() {
+    closeUserMenu();
+    isApiKeysModalOpen.set(true);
   }
 
   function handleSearchInput(e) {
@@ -171,6 +177,13 @@
                 <button class="menu-item menu-item-admin" on:click={openAdminPanel}>
                   <span>🛡️</span>
                   <span>User Permissions Admin</span>
+                </button>
+              {/if}
+
+              {#if $currentUser.can_edit}
+                <button class="menu-item" on:click={openApiKeys}>
+                  <span>🤖</span>
+                  <span>Agent API Keys</span>
                 </button>
               {/if}
 

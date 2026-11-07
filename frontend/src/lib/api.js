@@ -116,6 +116,22 @@ export const api = {
     return request('/auth/logout-all', { method: 'POST' });
   },
 
+  // Personal API keys for agents
+  async listApiKeys() {
+    return request('/auth/api-keys');
+  },
+
+  async createApiKey(name) {
+    return request('/auth/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  async revokeApiKey(keyId) {
+    return request(`/auth/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
+  },
+
   async revokeUserSessions(userId) {
     return request(`/admin/users/${encodeURIComponent(userId)}/revoke-sessions`, { method: 'POST' });
   },

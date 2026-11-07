@@ -95,6 +95,13 @@ async def init_db_indexes(db: AsyncIOMotorDatabase) -> None:
         logger.warning("Could not create images TTL index: %s", exc)
 
     try:
+        # API keys are looked up by digest on every agent request
+        await db["api_keys"].create_index("key_hash", unique=True)
+        await db["api_keys"].create_index("user_id")
+    except Exception as exc:
+        logger.warning("Could not create api_keys indexes: %s", exc)
+
+    try:
         # One account per email, even when two first sign-ins race
         await db["users"].create_index("email", unique=True)
     except Exception as exc:
