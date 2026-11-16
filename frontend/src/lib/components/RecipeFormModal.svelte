@@ -38,10 +38,19 @@
     { step_number: 1, instruction: '', tip: '' }
   ];
 
-  // Populate if editing
-  $: if ($isFormModalOpen) {
-    if ($editingRecipe) {
-      const r = $editingRecipe;
+  // Populate the form once per open (or when a different recipe is loaded for editing).
+  // Re-running this on every store notification would overwrite whatever the user is typing.
+  let populatedKey = null;
+  $: populateForm($isFormModalOpen, $editingRecipe);
+
+  function populateForm(isOpen, recipe) {
+    const key = isOpen ? (recipe ? `edit:${recipe.id}` : 'new') : null;
+    if (key === populatedKey) return;
+    populatedKey = key;
+    if (!isOpen) return;
+    {
+    if (recipe) {
+      const r = recipe;
       title = r.title || '';
       description = r.description || '';
       prep_time_minutes = r.prep_time_minutes || 15;
@@ -83,6 +92,7 @@
       notes = '';
       ingredients = [{ name: '', amount: 1, unit: '', notes: '' }];
       instructions = [{ step_number: 1, instruction: '', tip: '' }];
+    }
     }
   }
 
