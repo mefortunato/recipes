@@ -365,4 +365,25 @@
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
   }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: 0.5rem;
+    }
+    .keys-card {
+      max-height: calc(100dvh - 1rem);
+    }
+    .keys-card :global(input),
+    .keys-card :global(select),
+    .keys-card :global(textarea) {
+      font-size: 16px; /* prevents iOS zoom-on-focus */
+    }
+  }
+
+  @media (max-width: 640px) {
+    .create-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
 </style>

@@ -551,4 +551,36 @@
     line-height: 1.45;
     margin: 0;
   }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: 0.5rem;
+    }
+    .auth-card {
+      max-height: calc(100dvh - 1rem);
+      overflow-y: auto;
+    }
+    .auth-card :global(input),
+    .auth-card :global(select),
+    .auth-card :global(textarea) {
+      font-size: 16px; /* prevents iOS zoom-on-focus */
+    }
+  }
+
+  @media (max-width: 640px) {
+    .dev-btn-group {
+      grid-template-columns: 1fr;
+    }
+    .btn-dev-profile,
+    .dev-info {
+      min-width: 0;
+    }
+    .custom-dev-box {
+      flex-direction: column;
+    }
+    .dev-input,
+    .btn-dev-submit {
+      min-height: 42px;
+    }
+  }
 </style>
