@@ -196,7 +196,7 @@
 
   .recipes-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(310px, 100%), 1fr));
     gap: 1.75rem;
   }
 
@@ -256,8 +256,33 @@
   }
 
   @media (max-width: 640px) {
+    .main-content {
+      padding: 1.25rem 1rem 3rem;
+    }
+    .hero-intro {
+      margin-bottom: 1.25rem;
+    }
     .hero-heading {
       font-size: 1.75rem;
+    }
+    .hero-tagline {
+      font-size: 0.95rem;
+    }
+    .recipes-grid {
+      gap: 1.25rem;
+    }
+    .pagination-bar {
+      gap: 0.75rem;
+      margin-top: 2rem;
+      padding-top: 1.25rem;
+    }
+    .footer-container {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    .app-footer {
+      padding: 1.25rem 1rem;
     }
   }
 </style>

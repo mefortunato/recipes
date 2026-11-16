@@ -536,7 +536,7 @@
                     </td>
 
                     <!-- Assigned Role Dropdown -->
-                    <td class="col-role">
+                    <td class="col-role" data-label="Role">
                       <div class="role-selector-wrap">
                         <select
                           class="role-select {user.role === 'admin' ? 'select-admin' : user.role === 'editor' ? 'select-editor' : 'select-viewer'}"
@@ -556,7 +556,7 @@
                     </td>
 
                     <!-- Recipe Editing Toggle -->
-                    <td class="col-edit">
+                    <td class="col-edit" data-label="Can modify recipes">
                       <label class="switch-toggle" title="Direct recipe add/edit/delete capability">
                         <input
                           type="checkbox"
@@ -572,8 +572,8 @@
                     </td>
 
                     <!-- Timestamps -->
-                    <td class="col-date">{formatDate(user.created_at)}</td>
-                    <td class="col-date">{formatDate(user.last_login)}</td>
+                    <td class="col-date" data-label="Joined">{formatDate(user.created_at)}</td>
+                    <td class="col-date" data-label="Last login">{formatDate(user.last_login)}</td>
 
                     <!-- Actions -->
                     <td class="col-actions text-right">
@@ -1685,6 +1685,74 @@
     .btn-seed {
       width: 100%;
       justify-content: center;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: 0.5rem;
+    }
+    .admin-card {
+      max-height: calc(100dvh - 1rem);
+    }
+    .admin-card :global(input),
+    .admin-card :global(select),
+    .admin-card :global(textarea) {
+      font-size: 16px; /* prevents iOS zoom-on-focus */
+    }
+  }
+
+  /* Phones: turn the users table into stacked cards */
+  @media (max-width: 640px) {
+    .users-table,
+    .users-table tbody,
+    .users-table tr,
+    .users-table td {
+      display: block;
+      width: 100%;
+    }
+    .users-table thead {
+      display: none;
+    }
+    .users-table {
+      border-spacing: 0;
+    }
+    .user-row {
+      position: relative;
+      margin-bottom: 0.75rem;
+      padding: 0.35rem 0;
+    }
+    .user-row td,
+    .user-row td:first-child,
+    .user-row td:last-child {
+      border-radius: 0;
+      padding: 0.5rem 1rem;
+    }
+    .user-row td[data-label] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .user-row td[data-label]::before {
+      content: attr(data-label);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+    }
+    .user-row .col-actions {
+      position: absolute;
+      top: 0.35rem;
+      right: 0;
+      width: auto;
+    }
+    .user-row .col-user {
+      padding-right: 3rem;
+    }
+    .col-role select {
+      min-height: 40px;
     }
   }
 </style>

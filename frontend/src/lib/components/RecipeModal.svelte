@@ -1208,4 +1208,53 @@
       display: none;
     }
   }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: 0;
+      align-items: stretch;
+    }
+    .modal-card {
+      max-height: none;
+      min-height: 100%;
+      border-radius: 0;
+    }
+    .modal-hero {
+      height: 240px;
+      min-height: 240px;
+    }
+    .hero-overlay {
+      padding: 2.5rem 1rem 1rem;
+    }
+    .thumbnails-strip {
+      padding: 0.75rem 1rem;
+      overflow-x: auto;
+    }
+    .modal-body {
+      padding: 1.25rem 1rem;
+    }
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .close-btn {
+      width: 44px;
+      height: 44px;
+    }
+    .modal-footer {
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      padding: 1rem;
+      position: sticky;
+      bottom: 0;
+    }
+    .footer-right {
+      flex: 1 1 auto;
+      justify-content: flex-end;
+    }
+    .scaler-card,
+    .vote-section-card {
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+  }
 </style>

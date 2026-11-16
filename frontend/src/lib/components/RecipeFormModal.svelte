@@ -829,4 +829,53 @@
       grid-template-columns: 1fr 1fr;
     }
   }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: 0;
+      align-items: stretch;
+    }
+    .modal-card {
+      max-height: none;
+      min-height: 100%;
+      border-radius: 0;
+    }
+    .modal-header {
+      padding: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    .modal-form {
+      padding: 1rem;
+    }
+    .modal-form-actions {
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .modal-form-actions :global(.btn) {
+      flex: 1 1 auto;
+    }
+    .modal-card :global(input),
+    .modal-card :global(select),
+    .modal-card :global(textarea) {
+      font-size: 16px; /* prevents iOS zoom-on-focus */
+    }
+  }
+
+  @media (max-width: 640px) {
+    .ingredient-row {
+      grid-template-columns: 1fr 1fr;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px dashed var(--border-color);
+    }
+    .ingredient-row > :nth-child(1),
+    .ingredient-row > :nth-child(4) {
+      grid-column: 1 / -1;
+    }
+    .ingredient-row > :nth-child(5) {
+      grid-column: 1 / -1;
+      justify-self: end;
+    }
+  }
 </style>

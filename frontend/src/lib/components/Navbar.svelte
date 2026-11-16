@@ -124,7 +124,7 @@
           title="Open Access & Permissions Admin Panel"
         >
           <span>🛡️</span>
-          <span>Admin Panel</span>
+          <span class="btn-label">Admin Panel</span>
         </button>
       {/if}
 
@@ -134,9 +134,10 @@
           class="btn btn-primary"
           on:click={openCreateModal}
           title="Create a new recipe"
+          aria-label="Add recipe"
         >
           <span style="font-size: 1.1rem; line-height: 1;">+</span>
-          <span>Add Recipe</span>
+          <span class="btn-label">Add Recipe</span>
         </button>
       {/if}
 
@@ -573,6 +574,14 @@
     background: rgba(239, 68, 68, 0.15);
   }
 
+  .actions {
+    min-width: 0;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
   @media (max-width: 900px) {
     .navbar-container {
       flex-wrap: wrap;
@@ -581,6 +590,81 @@
       order: 3;
       max-width: 100%;
       flex-basis: 100%;
+    }
+  }
+
+  /* Phones: one compact row for brand + actions, search underneath */
+  @media (max-width: 640px) {
+    .navbar-container {
+      padding: 0.6rem 1rem;
+      gap: 0.6rem 0.75rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .search-box {
+      grid-column: 1 / -1;
+    }
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      font-size: 1.6rem;
+      flex-shrink: 0;
+    }
+    .brand-subtitle,
+    .health-text,
+    .btn-label,
+    .user-pill-name,
+    .role-badge,
+    .caret,
+    .btn-admin {
+      display: none;
+    }
+    .brand-title {
+      font-size: 1.2rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .brand-text {
+      min-width: 0;
+    }
+    .health-indicator {
+      padding: 0.45rem;
+    }
+    .actions {
+      gap: 0.5rem;
+    }
+    .actions .btn {
+      min-width: 40px;
+      min-height: 40px;
+      padding: 0.4rem 0.75rem;
+    }
+    .btn-google {
+      min-height: 40px;
+      padding: 0.4rem 0.8rem;
+    }
+    .user-pill-btn {
+      padding: 0.2rem;
+      min-width: 40px;
+      min-height: 40px;
+      justify-content: center;
+    }
+    .user-avatar-img,
+    .user-avatar-placeholder {
+      width: 32px;
+      height: 32px;
+    }
+    .search-input {
+      padding-top: 0.7rem;
+      padding-bottom: 0.7rem;
+      font-size: 16px; /* prevents iOS zoom-on-focus */
+    }
+    .user-dropdown-menu {
+      width: min(280px, calc(100vw - 2rem));
+    }
+    .menu-item {
+      padding: 0.8rem 1rem;
+      font-size: 0.9rem;
     }
   }
 </style>
